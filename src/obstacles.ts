@@ -94,12 +94,13 @@ export async function openFreeMapSource(): Promise<ObstacleSource> {
   };
 }
 
+/** True when the source's bounds contain the whole grid (partial archives would drop obstacles outside them). */
 export function sourceCovers(src: ObstacleSource, g: Grid): boolean {
   if (!src.bounds) return true;
   const [w, s, e, n] = src.bounds;
   const lon = (x: number) => x * 360 - 180;
   const lat = (y: number) => (Math.atan(Math.sinh(Math.PI * (1 - 2 * y))) * 180) / Math.PI;
-  return !(lon(gridX1(g)) < w || lon(g.x0) > e || lat(gridY1(g)) > n || lat(g.y0) < s);
+  return lon(g.x0) >= w && lon(gridX1(g)) <= e && lat(g.y0) <= n && lat(gridY1(g)) >= s;
 }
 
 /** Minimum map zoom at which obstacles are rasterised (cells must be ~building scale). */

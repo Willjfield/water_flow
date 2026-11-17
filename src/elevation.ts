@@ -21,12 +21,18 @@ function fetchOne(t: TileRef): Promise<ImageBitmap | null> {
   let p = cache.get(key);
   if (!p) {
     const url = MAPTERHORN_URL.replace('{z}', String(t.z)).replace('{x}', String(wrapX(t.x, t.z))).replace('{y}', String(t.y));
-    p = fetch(url)
+    // Missing tiles (404) stay cached as null; transient failures are evicted so a later rebuild retries.
+    const req: Promise<ImageBitmap | null> = fetch(url)
       .then(async (r) => {
-        if (!r.ok) return null;
+        if (r.status === 404) return null;
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
         return createImageBitmap(await r.blob(), { premultiplyAlpha: 'none', colorSpaceConversion: 'none' });
       })
-      .catch(() => null);
+      .catch(() => {
+        if (cache.get(key) === req) cache.delete(key);
+        return null;
+      });
+    p = req;
     cache.set(key, p);
     if (cache.size > CACHE_LIMIT) cache.delete(cache.keys().next().value!);
   } else {

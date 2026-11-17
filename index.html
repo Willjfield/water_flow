@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="icon" href="data:," />
+    <title>water_flow — shallow-water simulation</title>
+  </head>
+  <body>
+    <div id="map"></div>
+    <div id="error" hidden></div>
+    <aside id="panel">
+      <header><h1>Water flow</h1><button id="panel-toggle" title="Collapse">☰</button></header>
+      <fieldset class="modes">
+        <label><input type="radio" name="mode" value="rain" checked />Rain</label>
+        <label><input type="radio" name="mode" value="pour" />Pour</label>
+      </fieldset>
+      <p class="hint">Pour: hold the mouse on the map. <kbd>P</kbd> toggles mode, <kbd>Space</kbd> pauses, <kbd>R</kbd> resets.</p>
+      <div class="row"><label for="rain">Rain rate</label><input id="rain" type="range" min="1" max="500" /><output id="rain-val"></output></div>
+      <div class="row"><label for="pour">Pour rate</label><input id="pour" type="range" min="1" max="1000" /><output id="pour-val"></output></div>
+      <div class="row"><label for="brush">Brush radius</label><input id="brush" type="range" min="3" max="500" /><output id="brush-val"></output></div>
+      <div class="row"><label for="speed">Sim speed</label><input id="speed" type="range" min="0.5" max="600" /><output id="speed-val"></output></div>
+      <div class="row"><label for="infil">Infiltration</label><input id="infil" type="range" min="0" max="100" step="1" /><output id="infil-val"></output></div>
+      <div class="row"><label for="manning">Manning n</label><input id="manning" type="range" min="0.01" max="0.15" step="0.001" /><output id="manning-val"></output></div>
+      <div class="row"><label for="mindepth">Show depth ≥</label><input id="mindepth" type="range" min="0.001" max="0.5" /><output id="mindepth-val"></output></div>
+      <div class="row"><label for="obstacles">Obstacles</label>
+        <select id="obstacles">
+          <option value="auto">Auto (local PMTiles, else OpenFreeMap)</option>
+          <option value="local">Local PMTiles only</option>
+          <option value="openfreemap">OpenFreeMap (global)</option>
+          <option value="off">Off</option>
+        </select><span></span></div>
+      <div class="row"><label for="res">Cell size</label>
+        <select id="res">
+          <option value="1">~1 px (fine)</option>
+          <option value="2">~2 px</option>
+          <option value="4">~4 px (fast)</option>
+        </select><span></span></div>
+      <div class="checks">
+        <label><input id="particles" type="checkbox" /> Particles</label>
+        <label><input id="showobs" type="checkbox" /> Show obstacles</label>
+        <label><input id="keepwater" type="checkbox" /> Keep water on move</label>
+        <label title="Cells with elevation ≤ 0 m drain (sea)"><input id="seasink" type="checkbox" /> Sea sink</label>
+      </div>
+      <div class="buttons"><button id="pause">Pause</button><button id="reset">Reset</button></div>
+      <div id="stats"></div>
+    </aside>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

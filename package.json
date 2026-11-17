@@ -1,0 +1,26 @@
+{
+  "name": "water_flow",
+  "version": "1.0.0",
+  "description": "Real-time GPU shallow-water simulation over global Mapterhorn elevation in MapLibre GL JS",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc",
+    "build:obstacles": "scripts/build-obstacles.sh"
+  },
+  "dependencies": {
+    "@mapbox/vector-tile": "^3.0.0",
+    "maplibre-gl": "^6.19.0",
+    "pbf": "^5.1.2",
+    "pmtiles": "^4.5.0"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.8"
+  },
+  "private": true,
+  "type": "module",
+  "license": "MIT"
+}

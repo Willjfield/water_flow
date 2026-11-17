@@ -190,16 +190,19 @@ void main() {
     return;
   }
   ivec2 start = ivec2(floor(c * u_scale + u_off + 1e-3));
+  // Average k*k old cells; beyond 16x16 take an evenly strided 16x16 subsample.
   int k = int(u_scale + 0.5);
+  int n = min(k, 16);
+  float stride = float(k) / float(n);
   vec4 acc = vec4(0.0);
   for (int y = 0; y < 16; y++) {
-    if (y >= k) break;
+    if (y >= n) break;
     for (int x = 0; x < 16; x++) {
-      if (x >= k) break;
-      acc += get(start + ivec2(x, y));
+      if (x >= n) break;
+      acc += get(start + ivec2(floor((vec2(x, y) + 0.5) * stride)));
     }
   }
-  o = acc / float(k * k);
+  o = acc / float(n * n);
 }
 `;
 

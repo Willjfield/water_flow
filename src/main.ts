@@ -130,6 +130,7 @@ function bindRange(id: string, key: keyof SimParams, fmt: (v: number) => string,
     (params as unknown as Record<string, number>)[key] = v;
     out.textContent = fmt(v);
     opts.onChange?.();
+    map.triggerRepaint();
   };
   input.addEventListener('input', update);
   out.textContent = fmt(params[key] as number);
@@ -141,6 +142,7 @@ function bindCheck(id: string, key: keyof SimParams, onChange?: () => void) {
   input.addEventListener('change', () => {
     (params as unknown as Record<string, boolean>)[key] = input.checked;
     onChange?.();
+    map.triggerRepaint();
   });
 }
 
@@ -153,7 +155,7 @@ bindRange('infil', 'infilMmPerHr', (v) => `${n0(v)} mm/h`);
 bindRange('manning', 'manningN', (v) => v.toFixed(3), { onChange: () => layer.markBedDirty() });
 bindRange('mindepth', 'minDepthM', (v) => `${(v * 100).toFixed(1)} cm`, { log: true });
 bindCheck('particles', 'particles');
-bindCheck('showobs', 'showObstacles', () => map.triggerRepaint());
+bindCheck('showobs', 'showObstacles');
 bindCheck('seasink', 'seaSink');
 bindCheck('keepwater', 'keepWater');
 

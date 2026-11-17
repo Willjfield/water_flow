@@ -82,6 +82,8 @@ export class WaterLayer implements CustomLayerInterface {
   private pendingObs: { grid: Grid; data: Uint8Array | null } | null = null;
   private bedDirty = false;
   private clearRequested = false;
+  /** Stats no longer describe the water state; keep drawing (even when paused) until a fresh readback lands. */
+  private statsDirty = false;
   private gen = 0;
   private obsGen = 0;
   private lastFrame = 0;
@@ -354,12 +356,18 @@ export class WaterLayer implements CustomLayerInterface {
     return n * dt;
   }
 
+  private invalidateStats() {
+    if (this.fence) { this.gl.deleteSync(this.fence); this.fence = null; }
+    this.statsDirty = true;
+  }
+
   private reduceAndRead() {
     const gl = this.gl, g = this.grid!;
     if (this.fence) {
       if (gl.getSyncParameter(this.fence, gl.SYNC_STATUS) !== gl.SIGNALED) return;
       gl.deleteSync(this.fence);
       this.fence = null;
+      this.statsDirty = false;
       gl.bindBuffer(gl.PIXEL_PACK_BUFFER, this.pbo);
       gl.getBufferSubData(gl.PIXEL_PACK_BUFFER, 0, this.readback);
       gl.bindBuffer(gl.PIXEL_PACK_BUFFER, null);
@@ -396,7 +404,7 @@ export class WaterLayer implements CustomLayerInterface {
     gl.disable(gl.BLEND); gl.disable(gl.DEPTH_TEST); gl.disable(gl.STENCIL_TEST); gl.disable(gl.SCISSOR_TEST); gl.disable(gl.CULL_FACE);
     gl.colorMask(true, true, true, true);
     try {
-      if (this.pending) { this.applyPending(this.pending); this.pending = null; }
+      if (this.pending) { this.applyPending(this.pending); this.pending = null; this.invalidateStats(); }
       if (!this.grid || !this.state) return;
       if (this.pendingObs) {
         if (this.pendingObs.grid === this.grid) this.setObstacles(this.pendingObs.data);
@@ -407,6 +415,7 @@ export class WaterLayer implements CustomLayerInterface {
         this.resetParticles();
         this.cmax = this.hmax = 0;
         this.clearRequested = false;
+        this.invalidateStats();
       }
       if (this.bedDirty) this.computeBed();
       const now = performance.now();
@@ -444,7 +453,7 @@ export class WaterLayer implements CustomLayerInterface {
       gl.drawArrays(gl.POINTS, 0, PARTICLE_TEX * PARTICLE_TEX);
     }
     gl.bindVertexArray(null);
-    if (!this.params.paused || this.pending) this.map.triggerRepaint();
+    if (!this.params.paused || this.pending || this.statsDirty) this.map.triggerRepaint();
   }
 
   get demZoomLevel() { return this.demZoom; }

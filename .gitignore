@@ -1,0 +1,4 @@
+node_modules
+dist
+*.osm.pbf
+.DS_Store

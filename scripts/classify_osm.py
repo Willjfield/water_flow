@@ -31,7 +31,7 @@ def parse_width(v):
     if m:
         w = float(m.group(1)) * 0.3048 + float(m.group(2) or 0) * 0.0254
     else:
-        m = re.match(r"([0-9]+(?:\.[0-9]+)?)\s*(ft|feet|foot)?\b", s)
+        m = re.match(r"([0-9]+(?:\.[0-9]+)?)\s*(ft|feet|foot)?", s)
         if not m:
             return None
         w = float(m.group(1)) * (0.3048 if m.group(2) else 1.0)

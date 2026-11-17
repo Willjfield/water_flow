@@ -86,6 +86,7 @@ export async function openFreeMapSource(): Promise<ObstacleSource> {
           return { kind: 'road', cls: map[c] ?? c };
         }
         if (layer === 'waterway') {
+          if (brunnel === 'bridge') return null;
           return { kind: 'waterway', cls: brunnel === 'tunnel' ? 'culvert' : String(p.class ?? 'stream') };
         }
         return null;

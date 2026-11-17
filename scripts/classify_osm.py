@@ -23,12 +23,18 @@ OPEN_BUILDINGS = {"no", "roof", "carport", "canopy", "construction", "ruins"}
 
 
 def parse_width(v):
+    """OSM width in metres; accepts plain/metric values and feet ('10 ft', 10'6\")."""
     if not v:
         return None
-    m = re.match(r"\s*([0-9]+(?:\.[0-9]+)?)", str(v))
-    if not m:
-        return None
-    w = float(m.group(1))
+    s = str(v).strip().lower()
+    m = re.match(r"([0-9]+(?:\.[0-9]+)?)\s*'\s*(?:([0-9]+(?:\.[0-9]+)?)\s*\")?", s)
+    if m:
+        w = float(m.group(1)) * 0.3048 + float(m.group(2) or 0) * 0.0254
+    else:
+        m = re.match(r"([0-9]+(?:\.[0-9]+)?)\s*(ft|feet|foot)?\b", s)
+        if not m:
+            return None
+        w = float(m.group(1)) * (0.3048 if m.group(2) else 1.0)
     return w if 0 < w < 200 else None
 
 
@@ -50,6 +56,9 @@ def classify(t, geom_type):
             return "embankment", t.get("man_made") or t.get("highway") or t.get("railway") or "embankment"
     w = t.get("waterway")
     if w in WATERWAYS:
+        # aqueducts and real tunnels don't touch the surface
+        if t.get("bridge", "no") != "no" or t.get("tunnel", "no") not in ("no", "culvert"):
+            return None
         # culverts carry water under roads, so they stay: they cut through raised road cells.
         return "waterway", ("culvert" if t.get("tunnel") == "culvert" else w)
     if t.get("barrier") in BARRIERS:

@@ -163,7 +163,7 @@ export class WaterLayer implements CustomLayerInterface {
   private onMoveEnd = () => {
     clearTimeout(this.moveTimer);
     this.moveTimer = window.setTimeout(() => {
-      if (!this.grid || !gridStillValid(this.map, this.grid, this.params.cellPx)) this.rebuild();
+      if (!this.grid || !this.params.keepWater || !gridStillValid(this.map, this.grid, this.params.cellPx)) this.rebuild();
     }, 150);
   };
 

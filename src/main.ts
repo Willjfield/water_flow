@@ -215,6 +215,12 @@ document.querySelectorAll<HTMLLabelElement>('label[data-tip]').forEach((el, i) =
   icon.addEventListener('mouseleave', hideTooltip);
   icon.addEventListener('blur', hideTooltip);
   icon.addEventListener('click', (e) => e.preventDefault());
+  icon.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    e.preventDefault();
+    e.stopPropagation();
+    if (tooltip.hidden) show(); else hideTooltip();
+  });
 });
 $('panel-toggle').addEventListener('click', () => $('panel').classList.toggle('collapsed'));
 

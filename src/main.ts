@@ -185,6 +185,8 @@ window.addEventListener('keydown', (e) => {
   if (e.key === 'r') layer.reset();
 });
 const tooltip = $('tooltip');
+const hideTooltip = () => (tooltip.hidden = true);
+window.addEventListener('keydown', (e) => e.key === 'Escape' && hideTooltip());
 document.querySelectorAll<HTMLLabelElement>('label[data-tip]').forEach((el, i) => {
   const desc = document.createElement('span');
   desc.id = `tip-${i}`;
@@ -208,11 +210,10 @@ document.querySelectorAll<HTMLLabelElement>('label[data-tip]').forEach((el, i) =
     tooltip.style.left = `${Math.min(r.right + 8, innerWidth - t.width - 8)}px`;
     tooltip.style.top = `${Math.max(8, Math.min(r.top - 6, innerHeight - t.height - 8))}px`;
   };
-  const hide = () => (tooltip.hidden = true);
   icon.addEventListener('mouseenter', show);
   icon.addEventListener('focus', show);
-  icon.addEventListener('mouseleave', hide);
-  icon.addEventListener('blur', hide);
+  icon.addEventListener('mouseleave', hideTooltip);
+  icon.addEventListener('blur', hideTooltip);
   icon.addEventListener('click', (e) => e.preventDefault());
 });
 $('panel-toggle').addEventListener('click', () => $('panel').classList.toggle('collapsed'));

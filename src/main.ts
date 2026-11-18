@@ -1,4 +1,4 @@
-import { Map as MlMap, NavigationControl, ScaleControl, setWorkerUrl } from 'maplibre-gl';
+import { Map as MlMap, NavigationControl, ScaleControl, setWorkerUrl, type GeoJSONSource, type LngLat } from 'maplibre-gl';
 // maplibre-gl resolves its worker relative to import.meta.url, which bundlers rewrite; ship it as an asset.
 import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?url';
 import 'maplibre-gl/dist/maplibre-gl.css';
@@ -84,35 +84,82 @@ map.on('load', () => {
     firstSymbol,
   );
   map.addLayer(layer, firstSymbol);
+  map.addSource('pour-brush', { type: 'geojson', data: EMPTY });
+  map.addLayer({ id: 'pour-brush-fill', type: 'fill', source: 'pour-brush', paint: { 'fill-color': '#1b6fd1', 'fill-opacity': 0.08 } });
+  map.addLayer({ id: 'pour-brush-casing', type: 'line', source: 'pour-brush', paint: { 'line-color': '#fff', 'line-width': 3.5, 'line-opacity': 0.9 } });
+  map.addLayer({ id: 'pour-brush-line', type: 'line', source: 'pour-brush', paint: { 'line-color': '#0b4fa3', 'line-width': 2, 'line-dasharray': [3, 2] } });
+  updateBrush();
 });
 
 // ------------------------------------------------------------ pouring
 const canvas = map.getCanvasContainer();
 let pouring = false;
+let hoverAt: LngLat | null = null;
+let boxStart: LngLat | null = null;
+let boxDraft: [LngLat, LngLat] | null = null;
+
+const EMPTY: GeoJSON.FeatureCollection = { type: 'FeatureCollection', features: [] };
+function circlePolygon(c: LngLat, radiusM: number): GeoJSON.Feature {
+  const dLat = radiusM / 111_320, dLng = dLat / Math.cos((c.lat * Math.PI) / 180);
+  const ring = Array.from({ length: 65 }, (_, i) => {
+    const a = (i / 64) * 2 * Math.PI;
+    return [c.lng + dLng * Math.cos(a), c.lat + dLat * Math.sin(a)];
+  });
+  return { type: 'Feature', properties: {}, geometry: { type: 'Polygon', coordinates: [ring] } };
+}
+function boxPolygon([a, b]: [LngLat, LngLat]): GeoJSON.Feature {
+  const ring = [[a.lng, a.lat], [b.lng, a.lat], [b.lng, b.lat], [a.lng, b.lat], [a.lng, a.lat]];
+  return { type: 'Feature', properties: {}, geometry: { type: 'Polygon', coordinates: [ring] } };
+}
+function updateBrush() {
+  const src = map.getSource<GeoJSONSource>('pour-brush');
+  if (!src) return;
+  const f: GeoJSON.Feature[] = [];
+  if (params.mode === 'pour' && hoverAt) f.push(circlePolygon(hoverAt, params.brushRadiusM));
+  const box = params.mode === 'box' ? boxDraft ?? layer.pourBox : null;
+  if (box) f.push(boxPolygon(box));
+  src.setData(f.length ? { type: 'FeatureCollection', features: f } : EMPTY);
+}
+
 function setMode(m: SimParams['mode']) {
   params.mode = m;
   document.querySelectorAll<HTMLInputElement>('input[name=mode]').forEach((r) => (r.checked = r.value === m));
-  canvas.classList.toggle('pour-mode', m === 'pour');
-  if (m === 'pour') map.dragPan.disable(); else map.dragPan.enable();
+  canvas.classList.toggle('pour-mode', m !== 'rain');
+  if (m === 'rain') map.dragPan.enable(); else map.dragPan.disable();
   if (m !== 'pour') layer.pourAt = null;
+  $('clearbox').hidden = m !== 'box';
+  updateBrush();
 }
-map.on('mousedown', (e) => {
-  if (params.mode !== 'pour' || e.originalEvent.button !== 0) return;
-  pouring = true;
-  layer.pourAt = e.lngLat;
-});
-map.on('mousemove', (e) => { if (pouring) layer.pourAt = e.lngLat; });
-const stopPour = () => { pouring = false; layer.pourAt = null; };
-map.on('mouseup', stopPour);
-canvas.addEventListener('mouseleave', stopPour);
+
+function pointerDown(at: LngLat) {
+  if (params.mode === 'pour') { pouring = true; layer.pourAt = at; }
+  if (params.mode === 'box') { boxStart = at; boxDraft = [at, at]; }
+  updateBrush();
+}
+function pointerMove(at: LngLat) {
+  hoverAt = at;
+  if (pouring) layer.pourAt = at;
+  if (boxStart) boxDraft = [boxStart, at];
+  updateBrush();
+}
+function pointerUp() {
+  pouring = false;
+  layer.pourAt = null;
+  if (boxStart && boxDraft) layer.pourBox = boxDraft;
+  boxStart = boxDraft = null;
+  updateBrush();
+}
+map.on('mousedown', (e) => { if (params.mode !== 'rain' && e.originalEvent.button === 0) pointerDown(e.lngLat); });
+map.on('mousemove', (e) => pointerMove(e.lngLat));
+map.on('mouseup', pointerUp);
+canvas.addEventListener('mouseleave', () => { pointerUp(); hoverAt = null; updateBrush(); });
 map.on('touchstart', (e) => {
-  if (params.mode !== 'pour' || e.points.length !== 1) return;
+  if (params.mode === 'rain' || e.points.length !== 1) return;
   e.preventDefault();
-  pouring = true;
-  layer.pourAt = e.lngLat;
+  pointerDown(e.lngLat);
 });
-map.on('touchmove', (e) => { if (pouring) layer.pourAt = e.lngLat; });
-map.on('touchend', stopPour);
+map.on('touchmove', (e) => { if (pouring || boxStart) pointerMove(e.lngLat); });
+map.on('touchend', () => { pointerUp(); hoverAt = null; updateBrush(); });
 
 // ------------------------------------------------------------ UI
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -149,7 +196,7 @@ function bindCheck(id: string, key: keyof SimParams, onChange?: () => void) {
 const n0 = (v: number) => v.toFixed(0);
 bindRange('rain', 'rainMmPerHr', (v) => `${v < 10 ? v.toFixed(1) : n0(v)} mm/h`, { log: true });
 bindRange('pour', 'pourMmPerS', (v) => `${n0(v)} mm/s`, { log: true });
-bindRange('brush', 'brushRadiusM', (v) => `${n0(v)} m`, { log: true });
+bindRange('brush', 'brushRadiusM', (v) => `${n0(v)} m`, { log: true, onChange: updateBrush });
 bindRange('speed', 'simSpeed', (v) => `${v < 10 ? v.toFixed(1) : n0(v)}×`, { log: true });
 bindRange('infil', 'infilMmPerHr', (v) => `${n0(v)} mm/h`);
 bindRange('manning', 'manningN', (v) => v.toFixed(3), { onChange: () => layer.markBedDirty() });
@@ -178,9 +225,10 @@ pauseBtn.addEventListener('click', () => {
   map.triggerRepaint();
 });
 $<HTMLButtonElement>('reset').addEventListener('click', () => layer.reset());
+$<HTMLButtonElement>('clearbox').addEventListener('click', () => { layer.pourBox = null; updateBrush(); });
 window.addEventListener('keydown', (e) => {
   if ((e.target as HTMLElement).tagName === 'INPUT' || (e.target as HTMLElement).tagName === 'SELECT') return;
-  if (e.key === 'p') setMode(params.mode === 'pour' ? 'rain' : 'pour');
+  if (e.key === 'p') setMode(({ rain: 'pour', pour: 'box', box: 'rain' } as const)[params.mode]);
   if (e.key === ' ') { e.preventDefault(); pauseBtn.click(); }
   if (e.key === 'r') layer.reset();
 });

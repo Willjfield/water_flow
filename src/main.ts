@@ -56,8 +56,8 @@ async function resolveObstacleSource(g: Grid): Promise<ObstacleSource | null> {
 const map = new MlMap({
   container: 'map',
   style: BASEMAP,
-  center: [7.4215, 43.7365],
-  zoom: 16,
+  center: [-4.4977, 55.9240] as [number, number],
+  zoom: 12,
   maxPitch: 45,
   hash: true,
   attributionControl: { compact: true },

@@ -19,7 +19,7 @@ fieldset { border: 0; padding: 0; margin: 8px 0; }
 .row { display: grid; grid-template-columns: 104px 1fr 66px; align-items: center; gap: 6px; margin: 4px 0; }
 .row output { text-align: right; font-variant-numeric: tabular-nums; }
 .row input[type=range] { width: 100%; }
-.checks { display: grid; grid-template-columns: 1fr 1fr; gap: 2px 8px; }
+.checks { display: grid; grid-template-columns: auto 1fr; gap: 2px 8px; }
 .buttons { display: flex; gap: 6px; margin-top: 8px; }
 button { padding: 5px 10px; border-radius: 5px; border: 1px solid #889; background: #f4f6f8; cursor: pointer; }
 select { width: 100%; }
@@ -36,4 +36,4 @@ select { width: 100%; }
   position: fixed; z-index: 4; max-width: 260px; padding: 7px 9px; border-radius: 6px; pointer-events: none;
   background: #1f2a36; color: #fff; font-size: 12px; line-height: 1.4; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
 }
-.row label { white-space: nowrap; }
+.row label, .checks label { white-space: nowrap; }

@@ -185,13 +185,21 @@ window.addEventListener('keydown', (e) => {
   if (e.key === 'r') layer.reset();
 });
 const tooltip = $('tooltip');
-document.querySelectorAll<HTMLElement>('[data-tip]').forEach((el) => {
+document.querySelectorAll<HTMLLabelElement>('label[data-tip]').forEach((el, i) => {
+  const desc = document.createElement('span');
+  desc.id = `tip-${i}`;
+  desc.hidden = true;
+  desc.textContent = el.dataset.tip!;
   const icon = document.createElement('span');
   icon.className = 'tip-icon';
   icon.textContent = '?';
   icon.tabIndex = 0;
-  icon.setAttribute('aria-describedby', 'tooltip');
-  el.append(icon);
+  icon.setAttribute('role', 'button');
+  icon.setAttribute('aria-label', 'Help');
+  icon.setAttribute('aria-describedby', desc.id);
+  el.append(icon, desc);
+  const control = el.htmlFor ? document.getElementById(el.htmlFor) : el.querySelector('input');
+  control?.setAttribute('aria-describedby', desc.id);
   const show = () => {
     tooltip.textContent = el.dataset.tip!;
     tooltip.hidden = false;

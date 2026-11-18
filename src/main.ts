@@ -17,14 +17,14 @@ const params: SimParams = {
   rainMmPerHr: 100,
   pourMmPerS: 50,
   brushRadiusM: 25,
-  simSpeed: 30,
-  infilMmPerHr: 0,
+  simSpeed: 50,
+  infilMmPerHr: 8,
   manningN: 0.035,
   minDepthM: 0.01,
   opacity: 0.85,
   particles: true,
-  showObstacles: false,
-  seaSink: false,
+  showObstacles: true,
+  seaSink: true,
   keepWater: true,
   paused: false,
   cellPx: 2,
@@ -183,6 +183,29 @@ window.addEventListener('keydown', (e) => {
   if (e.key === 'p') setMode(params.mode === 'pour' ? 'rain' : 'pour');
   if (e.key === ' ') { e.preventDefault(); pauseBtn.click(); }
   if (e.key === 'r') layer.reset();
+});
+const tooltip = $('tooltip');
+document.querySelectorAll<HTMLElement>('[data-tip]').forEach((el) => {
+  const icon = document.createElement('span');
+  icon.className = 'tip-icon';
+  icon.textContent = '?';
+  icon.tabIndex = 0;
+  icon.setAttribute('aria-describedby', 'tooltip');
+  el.append(icon);
+  const show = () => {
+    tooltip.textContent = el.dataset.tip!;
+    tooltip.hidden = false;
+    const r = icon.getBoundingClientRect();
+    const t = tooltip.getBoundingClientRect();
+    tooltip.style.left = `${Math.min(r.right + 8, innerWidth - t.width - 8)}px`;
+    tooltip.style.top = `${Math.max(8, Math.min(r.top - 6, innerHeight - t.height - 8))}px`;
+  };
+  const hide = () => (tooltip.hidden = true);
+  icon.addEventListener('mouseenter', show);
+  icon.addEventListener('focus', show);
+  icon.addEventListener('mouseleave', hide);
+  icon.addEventListener('blur', hide);
+  icon.addEventListener('click', (e) => e.preventDefault());
 });
 $('panel-toggle').addEventListener('click', () => $('panel').classList.toggle('collapsed'));
 

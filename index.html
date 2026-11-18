@@ -9,6 +9,7 @@
   <body>
     <div id="map"></div>
     <div id="error" hidden></div>
+    <div id="tooltip" role="tooltip" hidden></div>
     <aside id="panel">
       <header><h1>Water flow</h1><button id="panel-toggle" title="Collapse">☰</button></header>
       <fieldset class="modes">
@@ -16,31 +17,31 @@
         <label><input type="radio" name="mode" value="pour" />Pour</label>
       </fieldset>
       <p class="hint">Pour: hold the mouse on the map. <kbd>P</kbd> toggles mode, <kbd>Space</kbd> pauses, <kbd>R</kbd> resets.</p>
-      <div class="row"><label for="rain">Rain rate</label><input id="rain" type="range" min="1" max="500" /><output id="rain-val"></output></div>
-      <div class="row"><label for="pour">Pour rate</label><input id="pour" type="range" min="1" max="1000" /><output id="pour-val"></output></div>
-      <div class="row"><label for="brush">Brush radius</label><input id="brush" type="range" min="3" max="500" /><output id="brush-val"></output></div>
-      <div class="row"><label for="speed">Sim speed</label><input id="speed" type="range" min="0.5" max="600" /><output id="speed-val"></output></div>
-      <div class="row"><label for="infil">Infiltration</label><input id="infil" type="range" min="0" max="100" step="1" /><output id="infil-val"></output></div>
-      <div class="row"><label for="manning">Manning n</label><input id="manning" type="range" min="0.01" max="0.15" step="0.001" /><output id="manning-val"></output></div>
-      <div class="row"><label for="mindepth">Show depth ≥</label><input id="mindepth" type="range" min="0.001" max="0.5" /><output id="mindepth-val"></output></div>
-      <div class="row"><label for="obstacles">Obstacles</label>
+      <div class="row"><label for="rain" data-tip="Rain falling evenly over the whole simulated area (Rain mode). About 2–10 mm/h is light rain, 50 mm/h is a severe storm, and 100 mm/h or more is an extreme cloudburst.">Rain rate</label><input id="rain" type="range" min="1" max="500" /><output id="rain-val"></output></div>
+      <div class="row"><label for="pour" data-tip="How fast water is added under the cursor in Pour mode, as water depth per second over the brush area. 50 mm/s adds 5 cm of water per second.">Pour rate</label><input id="pour" type="range" min="1" max="1000" /><output id="pour-val"></output></div>
+      <div class="row"><label for="brush" data-tip="Radius of the circle under the cursor where Pour mode adds water.">Brush radius</label><input id="brush" type="range" min="3" max="500" /><output id="brush-val"></output></div>
+      <div class="row"><label for="speed" data-tip="Simulated seconds per real second. 50× means one real second covers 50 seconds of flow. Higher values run more sub-steps per frame and may slow the frame rate.">Sim speed</label><input id="speed" type="range" min="0.5" max="600" /><output id="speed-val"></output></div>
+      <div class="row"><label for="infil" data-tip="How fast the ground soaks up standing water, as depth absorbed per hour on every wet cell. Typical values are 0–5 mm/h for pavement or clay, 5–15 mm/h for loam, and 20+ mm/h for sand. Rain at or below this rate soaks in completely and produces no runoff.">Infiltration</label><input id="infil" type="range" min="0" max="100" step="1" /><output id="infil-val"></output></div>
+      <div class="row"><label for="manning" data-tip="Manning's roughness coefficient: how strongly the ground surface slows the flow. Lower values mean a smoother surface and faster water. Typical values are 0.012–0.015 for asphalt or concrete, 0.03–0.04 for short grass or bare soil, 0.05–0.1 for brush, and 0.1+ for dense forest. Applies wherever an OSM feature doesn't set its own roughness.">Manning n</label><input id="manning" type="range" min="0.01" max="0.15" step="0.001" /><output id="manning-val"></output></div>
+      <div class="row"><label for="mindepth" data-tip="Water shallower than this is hidden but still simulated. Raise it to hide the thin film that rain leaves everywhere.">Show depth ≥</label><input id="mindepth" type="range" min="0.001" max="0.5" /><output id="mindepth-val"></output></div>
+      <div class="row"><label for="obstacles" data-tip="Where OpenStreetMap features come from. Buildings and walls block flow, and features like roads and water areas change roughness or ground height. Auto uses bundled local tiles when they cover the view and OpenFreeMap otherwise.">Obstacles</label>
         <select id="obstacles">
           <option value="auto">Auto (local PMTiles, else OpenFreeMap)</option>
           <option value="local">Local PMTiles only</option>
           <option value="openfreemap">OpenFreeMap (global)</option>
           <option value="off">Off</option>
         </select><span></span></div>
-      <div class="row"><label for="res">Cell size</label>
+      <div class="row"><label for="res" data-tip="Size of each simulation cell in screen pixels. Smaller cells show more detail but run slower. Changing this restarts the simulation.">Cell size</label>
         <select id="res">
           <option value="1">~1 px (fine)</option>
           <option value="2">~2 px</option>
           <option value="4">~4 px (fast)</option>
         </select><span></span></div>
       <div class="checks">
-        <label><input id="particles" type="checkbox" /> Particles</label>
-        <label><input id="showobs" type="checkbox" /> Show obstacles</label>
-        <label><input id="keepwater" type="checkbox" /> Keep water on move</label>
-        <label title="Cells with elevation ≤ 0 m drain (sea)"><input id="seasink" type="checkbox" /> Sea sink</label>
+        <label data-tip="Animated tracer particles that show the direction and speed of the flow."><input id="particles" type="checkbox" /> Particles</label>
+        <label data-tip="Highlight cells occupied by blocking obstacles such as buildings."><input id="showobs" type="checkbox" /> Show obstacles</label>
+        <label data-tip="Carry existing water over when you pan or zoom. When this is off, the simulation restarts every time the map moves."><input id="keepwater" type="checkbox" /> Keep water on move</label>
+        <label data-tip="Remove water that reaches ground at or below sea level (0 m), so the sea acts as a drain."><input id="seasink" type="checkbox" /> Sea sink</label>
       </div>
       <div class="buttons"><button id="pause">Pause</button><button id="reset">Reset</button></div>
       <div id="stats"></div>

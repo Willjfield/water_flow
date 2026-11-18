@@ -19,7 +19,7 @@ fieldset { border: 0; padding: 0; margin: 8px 0; }
 .row { display: grid; grid-template-columns: 104px 1fr 66px; align-items: center; gap: 6px; margin: 4px 0; }
 .row output { text-align: right; font-variant-numeric: tabular-nums; }
 .row input[type=range] { width: 100%; }
-.checks { display: grid; grid-template-columns: auto 1fr; gap: 2px 8px; }
+.checks { display: flex; flex-wrap: wrap; gap: 3px 14px; }
 .buttons { display: flex; gap: 6px; margin-top: 8px; }
 button { padding: 5px 10px; border-radius: 5px; border: 1px solid #889; background: #f4f6f8; cursor: pointer; }
 select { width: 100%; }

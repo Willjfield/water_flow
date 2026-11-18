@@ -115,7 +115,9 @@ function updateBrush() {
   const src = map.getSource<GeoJSONSource>('pour-brush');
   if (!src) return;
   const f: GeoJSON.Feature[] = [];
-  if (params.mode === 'pour' && hoverAt) f.push(circlePolygon(hoverAt, params.brushRadiusM));
+  // matches WaterLayer's 1.5-cell minimum source radius
+  const radiusM = Math.max(params.brushRadiusM, 1.5 * (layer.stats.grid?.dx ?? 0));
+  if (params.mode === 'pour' && hoverAt) f.push(circlePolygon(hoverAt, radiusM));
   const box = params.mode === 'box' ? boxDraft ?? layer.pourBox : null;
   if (box) f.push(boxPolygon(box));
   src.setData(f.length ? { type: 'FeatureCollection', features: f } : EMPTY);
@@ -288,7 +290,7 @@ function renderStats(s: SimStats) {
   ].filter(Boolean).join('<br>');
 }
 layer.onStats = renderStats;
-setInterval(() => renderStats(layer.stats), 250);
+setInterval(() => { renderStats(layer.stats); if (params.mode === 'pour' && hoverAt) updateBrush(); }, 250);
 
 function showError(msg: string) {
   const el = $('error');

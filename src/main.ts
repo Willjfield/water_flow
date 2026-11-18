@@ -219,6 +219,7 @@ document.querySelectorAll<HTMLLabelElement>('label[data-tip]').forEach((el, i) =
     if (e.key !== 'Enter' && e.key !== ' ') return;
     e.preventDefault();
     e.stopPropagation();
+    if (e.repeat) return;
     if (tooltip.hidden) show(); else hideTooltip();
   });
 });

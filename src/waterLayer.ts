@@ -5,7 +5,7 @@ import { type DemTile, loadDem } from './elevation';
 import { type ObstacleSource, rasterizeObstacles } from './obstacles';
 import * as S from './shaders';
 
-export type Mode = 'rain' | 'pour';
+export type Mode = 'rain' | 'pour' | 'box';
 
 export interface SimParams {
   mode: Mode;
@@ -94,6 +94,8 @@ export class WaterLayer implements CustomLayerInterface {
   private moveTimer: number | undefined;
 
   pourAt: LngLat | null = null;
+  /** opposite corners of the box that pours in 'box' mode */
+  pourBox: [LngLat, LngLat] | null = null;
   obstacleSource: ObstacleSource | null = null;
   stats: SimStats = { status: 'starting', obstacles: 'off', substeps: 0, dt: 0, speed: 0, maxDepth: 0, volume: 0, wetCells: 0, simTime: 0 };
   onStats?: (s: SimStats) => void;
@@ -340,12 +342,21 @@ export class WaterLayer implements CustomLayerInterface {
       const m = MercatorCoordinate.fromLngLat(this.pourAt);
       pour = [(m.x - g.x0) / g.cell, (m.y - g.y0) / g.cell, Math.max(1.5, p.brushRadiusM / g.dx), p.pourMmPerS / 1000];
     }
+    let box: [number, number, number, number] = [0, 0, 0, 0], boxRate = 0;
+    if (p.mode === 'box' && this.pourBox) {
+      const [a, b] = this.pourBox.map((ll) => MercatorCoordinate.fromLngLat(ll)).map((m) => [(m.x - g.x0) / g.cell, (m.y - g.y0) / g.cell]);
+      // grow sub-cell boxes to one cell so a tiny box still pours
+      const lo = [0, 1].map((k) => Math.min(a[k], b[k])), hi = [0, 1].map((k) => Math.max(a[k], b[k]));
+      for (const k of [0, 1]) if (hi[k] - lo[k] < 1) { const mid = (lo[k] + hi[k]) / 2; lo[k] = mid - 0.5; hi[k] = mid + 0.5; }
+      box = [lo[0], lo[1], hi[0], hi[1]];
+      boxRate = p.pourMmPerS / 1000;
+    }
     for (let i = 0; i < n; i++) {
       this.bindCell(this.progs.flux, st.read.tex).f('u_dt', dt).f('u_dx', g.dx).f('u_theta', 0.8).f('u_vmax', 15);
       this.fullscreen(st.write);
       st.swap();
       this.bindCell(this.progs.depth, st.read.tex).f('u_dt', dt).f('u_dx', g.dx).f('u_rain', rain)
-        .f4('u_pour', ...pour).f('u_infil', p.infilMmPerHr / 1000 / 3600).f('u_seaSink', p.seaSink ? 1 : 0);
+        .f4('u_pour', ...pour).f4('u_box', ...box).f('u_boxRate', boxRate).f('u_infil', p.infilMmPerHr / 1000 / 3600).f('u_seaSink', p.seaSink ? 1 : 0);
       this.fullscreen(st.write);
       st.swap();
     }

@@ -3,7 +3,7 @@ html, body { margin: 0; height: 100%; font: 13px/1.35 system-ui, -apple-system, 
 .pour-mode, .pour-mode .maplibregl-canvas { cursor: crosshair !important; }
 
 #panel {
-  position: absolute; top: 10px; left: 10px; width: 290px; max-height: calc(100% - 20px); overflow: auto;
+  position: absolute; top: 10px; left: 10px; width: min(320px, calc(100% - 70px)); max-height: calc(100% - 20px); overflow: auto;
   background: rgba(255, 255, 255, 0.94); border-radius: 8px; box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
   padding: 10px 12px; box-sizing: border-box; z-index: 2;
 }
@@ -16,10 +16,10 @@ fieldset { border: 0; padding: 0; margin: 8px 0; }
 .modes label { flex: 1; text-align: center; border: 1px solid #9ab; border-radius: 5px; padding: 4px; cursor: pointer; }
 .modes input { display: none; }
 .modes label:has(input:checked) { background: #1b6fd1; color: #fff; border-color: #1b6fd1; }
-.row { display: grid; grid-template-columns: 82px 1fr 74px; align-items: center; gap: 6px; margin: 4px 0; }
+.row { display: grid; grid-template-columns: 104px 1fr 66px; align-items: center; gap: 6px; margin: 4px 0; }
 .row output { text-align: right; font-variant-numeric: tabular-nums; }
 .row input[type=range] { width: 100%; }
-.checks { display: grid; grid-template-columns: 1fr 1fr; gap: 2px 8px; }
+.checks { display: flex; flex-wrap: wrap; gap: 3px 14px; }
 .buttons { display: flex; gap: 6px; margin-top: 8px; }
 button { padding: 5px 10px; border-radius: 5px; border: 1px solid #889; background: #f4f6f8; cursor: pointer; }
 select { width: 100%; }
@@ -27,3 +27,13 @@ select { width: 100%; }
 .warn { color: #b25a00; }
 .hint { font-size: 11px; color: #666; margin: 4px 0 0; }
 #error { position: absolute; top: 10px; left: 50%; transform: translateX(-50%); background: #b00020; color: #fff; padding: 8px 14px; border-radius: 6px; z-index: 3; }
+.tip-icon {
+  display: inline-flex; align-items: center; justify-content: center; width: 13px; height: 13px; margin-left: 4px;
+  border-radius: 50%; background: #c9d3dd; color: #234; font-size: 9.5px; font-weight: 700; cursor: help; vertical-align: 1px;
+}
+.tip-icon:hover, .tip-icon:focus { background: #1b6fd1; color: #fff; outline: none; }
+#tooltip {
+  position: fixed; z-index: 4; max-width: 260px; padding: 7px 9px; border-radius: 6px; pointer-events: none;
+  background: #1f2a36; color: #fff; font-size: 12px; line-height: 1.4; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+.row label, .checks label { white-space: nowrap; }

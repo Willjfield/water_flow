@@ -65,3 +65,40 @@ export async function loadDem(g: Grid): Promise<{ tiles: DemTile[]; zoom: number
   const tiles = res.filter((t): t is DemTile => !!t);
   return { tiles, zoom, missing: reqs.length - tiles.length };
 }
+
+/** CPU elevation lookup (metres) at a mercator point, bilinear like DEM_FS; NaN outside the loaded tiles. */
+export type DemSampler = (mx: number, my: number) => number;
+
+const decoded = new WeakMap<ImageBitmap, ImageData>();
+
+export function demSampler(tiles: DemTile[]): DemSampler | null {
+  if (!tiles.length) return null;
+  const n = Math.pow(2, tiles[0].req.z);
+  const byReq = new Map<string, { src: TileRef; img: ImageData }>();
+  for (const t of tiles) {
+    let img = decoded.get(t.image);
+    if (!img) {
+      const c = new OffscreenCanvas(t.image.width, t.image.height);
+      const ctx = c.getContext('2d', { willReadFrequently: true })!;
+      ctx.drawImage(t.image, 0, 0);
+      img = ctx.getImageData(0, 0, c.width, c.height);
+      decoded.set(t.image, img);
+    }
+    byReq.set(`${t.req.x}/${t.req.y}`, { src: t.src, img });
+  }
+  return (mx, my) => {
+    const e = byReq.get(`${Math.floor(mx * n)}/${Math.floor(my * n)}`);
+    if (!e) return NaN;
+    const { width: w, height: h, data } = e.img;
+    const sn = Math.pow(2, e.src.z);
+    const u = (mx * sn - e.src.x) * w - 0.5, v = (my * sn - e.src.y) * h - 0.5;
+    const i = Math.floor(u), j = Math.floor(v), fu = u - i, fv = v - j;
+    const at = (x: number, y: number) => {
+      const k = (Math.min(h - 1, Math.max(0, y)) * w + Math.min(w - 1, Math.max(0, x))) * 4;
+      return data[k] * 256 + data[k + 1] + data[k + 2] / 256 - 32768;
+    };
+    const top = at(i, j) * (1 - fu) + at(i + 1, j) * fu;
+    const bot = at(i, j + 1) * (1 - fu) + at(i + 1, j + 1) * fu;
+    return top * (1 - fv) + bot * fv;
+  };
+}

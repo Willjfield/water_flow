@@ -3,6 +3,8 @@ import { VectorTile } from '@mapbox/vector-tile';
 import { PbfReader } from 'pbf';
 import { type Grid, type TileRef, gridX1, gridY1, tileInCells, tilesCovering, wrapX } from './grid';
 import { type Kind, PAINT_ORDER, ruleFor } from './obstacleRules';
+import type { DemSampler } from './elevation';
+import { type BedOverride, buildBedOverride } from './channels';
 
 /** A feature normalised to the obstacle schema, in tile-local coordinates. */
 export interface ObstacleFeature {
@@ -78,13 +80,13 @@ export async function openFreeMapSource(): Promise<ObstacleSource> {
         const brunnel = p.brunnel as string | undefined;
         if (layer === 'building') return p.hide_3d ? null : { kind: 'building', cls: 'building' };
         if (layer === 'transportation') {
-          if (brunnel === 'bridge' || brunnel === 'tunnel') return null;
+          if (brunnel === 'tunnel') return null;
           const c = String(p.class ?? '');
-          if (c === 'rail' || c === 'transit') return { kind: 'road', cls: 'rail' };
           if (c === 'ferry' || c === 'aerialway') return null;
-          const map: Record<string, string> = { minor: 'residential', path: 'footway', motorway_construction: 'motorway' };
-          return { kind: 'road', cls: map[c] ?? c };
+          const map: Record<string, string> = { minor: 'residential', path: 'footway', motorway_construction: 'motorway', transit: 'rail' };
+          return { kind: brunnel === 'bridge' ? 'bridge' : 'road', cls: map[c] ?? c };
         }
+        if (layer === 'water') return brunnel === 'tunnel' ? null : { kind: 'water', cls: String(p.class ?? 'water') };
         if (layer === 'waterway') {
           if (brunnel === 'bridge') return null;
           return { kind: 'waterway', cls: brunnel === 'tunnel' ? 'culvert' : String(p.class ?? 'stream') };
@@ -108,11 +110,21 @@ export function sourceCovers(src: ObstacleSource, g: Grid): boolean {
 export const OBSTACLE_MIN_CELL_M = 12;
 const MAX_TILES = 160;
 
+export interface ObstacleRaster {
+  data: Uint8Array;
+  /** absolute bed elevations that open bridge crossings (null without a DEM) */
+  bedOverride: BedOverride | null;
+  features: number;
+  tiles: number;
+}
+
 /**
  * Rasterise obstacle tiles into an RGBA8 image aligned with the grid:
  * R = 255 blocked, G = 128 + dz/0.05, B = Manning n * 1000 (0 = background).
  */
-export async function rasterizeObstacles(g: Grid, src: ObstacleSource, signal?: AbortSignal): Promise<{ data: Uint8Array; features: number; tiles: number } | null> {
+export async function rasterizeObstacles(
+  g: Grid, src: ObstacleSource, dem: Promise<{ sampler: DemSampler; zoom: number } | null>, signal?: AbortSignal,
+): Promise<ObstacleRaster | null> {
   if (g.dx > OBSTACLE_MIN_CELL_M) return null;
   const z = src.maxzoom;
   const tiles = tilesCovering(g, z);
@@ -162,5 +174,7 @@ export async function rasterizeObstacles(g: Grid, src: ObstacleSource, signal?: 
     }
   }
   const img = ctx.getImageData(0, 0, g.nx, g.ny);
-  return { data: new Uint8Array(img.data.buffer), features: count, tiles: tiles.length };
+  const d = await dem;
+  const bedOverride = d ? buildBedOverride(g, results, d.sampler, d.zoom) : null;
+  return { data: new Uint8Array(img.data.buffer), bedOverride, features: count, tiles: tiles.length };
 }

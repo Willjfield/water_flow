@@ -26,6 +26,7 @@ const params: SimParams = {
   showObstacles: true,
   seaSink: true,
   keepWater: true,
+  openBridges: true,
   paused: false,
   cellPx: 2,
 };
@@ -207,6 +208,7 @@ bindCheck('particles', 'particles');
 bindCheck('showobs', 'showObstacles');
 bindCheck('seasink', 'seaSink');
 bindCheck('keepwater', 'keepWater');
+bindCheck('openbridges', 'openBridges', () => layer.markBedDirty());
 
 document.querySelectorAll<HTMLInputElement>('input[name=mode]').forEach((r) =>
   r.addEventListener('change', () => r.checked && setMode(r.value as SimParams['mode'])),

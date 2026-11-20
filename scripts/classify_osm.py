@@ -2,7 +2,7 @@
 """Reduce `osmium export` GeoJSONSeq to obstacle features for the water sim.
 
 Every output feature carries `kind` (building | road | barrier | embankment |
-waterway), `class` (the OSM value that selected it) and optionally `width` (m).
+waterway | bridge | water), `class` (the OSM value that selected it) and optionally `width` (m).
 The runtime maps (kind, class) to flow blockage, bed raise/lowering and
 Manning roughness, so physics can be tuned without rebuilding tiles.
 """
@@ -49,6 +49,11 @@ def classify(t, geom_type):
     b = t.get("building")
     if poly and b and b not in OPEN_BUILDINGS and t.get("location") != "underground":
         return "building", b
+    # bridges and water areas don't obstruct; the runtime uses them to cut bridge decks out of the DEM
+    if poly and t.get("man_made") == "bridge":
+        return "bridge", "man_made"
+    if poly and (t.get("natural") == "water" or t.get("waterway") == "riverbank") and t.get("covered") != "yes":
+        return "water", t.get("water") or "water"
     if not line:
         return None
     if t.get("embankment") == "yes" or t.get("man_made") in ("embankment", "dyke", "levee"):
@@ -64,9 +69,11 @@ def classify(t, geom_type):
     if t.get("barrier") in BARRIERS:
         return "barrier", t["barrier"]
     h = t.get("highway")
+    r = t.get("railway")
+    if t.get("bridge", "no") != "no" and t.get("tunnel", "no") == "no" and (h in ROADS or r in RAILWAYS):
+        return "bridge", h if h in ROADS else "rail"
     if h in ROADS and not elevated_or_buried(t) and t.get("area") != "yes":
         return "road", h
-    r = t.get("railway")
     if r in RAILWAYS and not elevated_or_buried(t):
         return "road", "rail"
     return None

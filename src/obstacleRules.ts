@@ -8,7 +8,8 @@
  */
 export interface Rule { blocked?: boolean; dz?: number; n?: number; width: number }
 
-export type Kind = 'building' | 'road' | 'barrier' | 'embankment' | 'waterway';
+/** `bridge` and `water` don't paint rules; they feed the bed override in channels.ts. */
+export type Kind = 'building' | 'road' | 'barrier' | 'embankment' | 'waterway' | 'bridge' | 'water';
 
 const ROAD_DEFAULT: Rule = { dz: 0.15, n: 0.02, width: 6 };
 const ROADS: Record<string, Rule> = {
@@ -56,6 +57,7 @@ export function ruleFor(kind: Kind, cls: string): Rule | null {
     case 'embankment': return { dz: 2.0, n: 0.05, width: 10 };
     case 'barrier': return BARRIERS[cls] ?? null;
     case 'waterway': return WATERWAYS[cls] ?? { dz: -0.5, n: 0.03, width: 2 };
+    case 'bridge': case 'water': return null;
   }
 }
 

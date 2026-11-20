@@ -15,6 +15,7 @@ npm run build    # typecheck + production bundle in dist/
 - **Simulation** (`src/shaders.ts`, `src/waterLayer.ts`): local-inertial shallow-water scheme on ping-pong RGBA32F targets (`r` depth, `g`/`b` face fluxes). A flux pass (momentum + Manning friction) and a depth pass (continuity + rain/pour/infiltration source terms) run per substep. Substeps are CFL-limited from a GPU reduction of max wave speed, read back asynchronously via a PBO. Water is resampled onto the new grid on move ("Keep water on move"), or reset.
 - **Sources**: *Rain* adds uniform dh/dt; *Pour* adds dh/dt inside the brush radius at the cursor (lngLat → Mercator → grid cell). Hold the mouse (or touch) to pour.
 - **Obstacles** (`src/obstacles.ts`, `src/obstacleRules.ts`): vector tiles are rasterized at runtime into a blocked/bed-delta/roughness texture. Buildings are no-flow cells; roads, rail and embankments are raised and rough; barriers are raised walls; waterways are lowered channels.
+- **Bridge breaching** (`src/channels.ts`): the DEM often records bridge decks over rivers, which then act as dams. An absolute bed-elevation override removes them in two ways. Waterway lines (drawn downstream in OSM) are capped at the lowest elevation seen upstream, and cells where a bridge crosses water (water areas or waterway footprints) take the lowest elevation of the surrounding water. Toggle with **Open bridges**.
 - **Rendering**: depth-tinted translucent blue water composited over the basemap, plus optional GPU particles advected along the velocity field.
 
 ## Obstacle data
@@ -22,7 +23,7 @@ npm run build    # typecheck + production bundle in dist/
 The app picks an obstacle source per grid ("Obstacles" select):
 
 1. Local PMTiles archives listed in `public/obstacles/index.json` when one covers the grid (a Monaco sample ships in the repo).
-2. Otherwise OpenFreeMap's global OpenMapTiles vector tiles (buildings, transportation, waterways) as a fallback.
+2. Otherwise OpenFreeMap's global OpenMapTiles vector tiles (buildings, transportation incl. bridges, waterways, water areas) as a fallback.
 
 Build a PMTiles archive from any OSM extract (needs `osmium`, `tippecanoe`, `python3`):
 
@@ -31,7 +32,7 @@ curl -LO https://download.geofabrik.de/europe/monaco-latest.osm.pbf
 npm run build:obstacles -- monaco-latest.osm.pbf public/obstacles/monaco.pmtiles [minlon,minlat,maxlon,maxlat]
 ```
 
-then add the path to `public/obstacles/index.json`. The pipeline (`scripts/build-obstacles.sh`) filters buildings, highways, railways, barriers, embankments/dykes and waterways with `osmium tags-filter`, normalizes them with `scripts/classify_osm.py` into a single `obstacles` layer (`kind`, `class`, `width`), and tiles z13–z14 with tippecanoe.
+then add the path to `public/obstacles/index.json`. The pipeline (`scripts/build-obstacles.sh`) filters buildings, highways, railways, barriers, embankments/dykes, waterways, water areas and bridges with `osmium tags-filter`, normalizes them with `scripts/classify_osm.py` into a single `obstacles` layer (`kind`, `class`, `width`), and tiles z13–z14 with tippecanoe.
 
 ## Controls
 

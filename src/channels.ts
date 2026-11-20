@@ -66,7 +66,9 @@ export function buildBedOverride(g: Grid, tiles: { t: TileRef; f: ObstacleFeatur
     const e = xs.map((x, i) => demAt(x, ys[i]));
     const quart = Math.max(1, Math.floor(e.length / 4));
     const minOf = (a: number[]) => a.reduce((m, v) => (v < m ? v : m), Infinity);
-    if (minOf(e.slice(-quart)) > minOf(e.slice(0, quart)) + REVERSE_THRESHOLD_M) { xs.reverse(); ys.reverse(); e.reverse(); }
+    const head = minOf(e.slice(0, quart)), tail = minOf(e.slice(-quart));
+    // only judge direction when both ends have DEM coverage
+    if (Number.isFinite(head) && Number.isFinite(tail) && tail > head + REVERSE_THRESHOLD_M) { xs.reverse(); ys.reverse(); e.reverse(); }
     const stampEvery = Math.max(1, Math.floor(r / 2 / step));
     let z = Infinity, cut = false;
     for (let i = 0; i < e.length; i++) {

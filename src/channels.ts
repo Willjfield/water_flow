@@ -18,7 +18,7 @@ import { ruleFor } from './obstacleRules';
  */
 export const NO_OVERRIDE = 1e9;
 /** Never lower a cell more than this below the DEM (guards against wrong directions and DEM voids). */
-const MAX_CUT_M = 30;
+export const MAX_CUT_M = 30;
 /** Extra width either side of a bridge's road footprint, plus the DEM's smoothing. */
 const BRIDGE_MARGIN_M = 3;
 /** Reverse a waterway piece whose end is this much higher than its start (mistagged direction). */

@@ -3,6 +3,7 @@ import { type GL, PingPong, Program, Target, createTexture, mul4 } from './gl';
 import { type Grid, computeGrid, gridStillValid, tileInCells } from './grid';
 import { type DemSampler, type DemTile, demSampler, loadDem } from './elevation';
 import { type ObstacleRaster, type ObstacleSource, rasterizeObstacles } from './obstacles';
+import { MAX_CUT_M } from './channels';
 import * as S from './shaders';
 
 export type Mode = 'rain' | 'pour' | 'box';
@@ -327,7 +328,7 @@ export class WaterLayer implements CustomLayerInterface {
   private computeBed() {
     this.progs.bed.use().tex('u_dem', 0, this.dem!.tex).tex('u_obs', 1, this.obsTex ?? this.dummyObs)
       .tex('u_ov', 2, this.ovTex ?? this.dummyOv)
-      .f('u_useObs', this.obsTex ? 1 : 0).f('u_useOv', this.ovTex && this.params.openBridges ? 1 : 0).f('u_baseN', this.params.manningN);
+      .f('u_useObs', this.obsTex ? 1 : 0).f('u_useOv', this.ovTex && this.params.openBridges ? 1 : 0).f('u_maxCut', MAX_CUT_M).f('u_baseN', this.params.manningN);
     this.fullscreen(this.bed!);
     this.bedDirty = false;
   }

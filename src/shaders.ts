@@ -64,12 +64,13 @@ uniform sampler2D u_obs;
 uniform sampler2D u_ov;  // absolute bed override (bridge breaching); huge = none
 uniform float u_useObs;
 uniform float u_useOv;
+uniform float u_maxCut;
 uniform float u_baseN;
 out vec4 o;
 void main() {
   ivec2 c = ivec2(gl_FragCoord.xy);
   float dem = texelFetch(u_dem, c, 0).r;
-  float base = u_useOv > 0.5 ? min(dem, texelFetch(u_ov, c, 0).r) : dem;
+  float base = u_useOv > 0.5 ? max(min(dem, texelFetch(u_ov, c, 0).r), dem - u_maxCut) : dem;
   vec4 ob = texelFetch(u_obs, c, 0) * 255.0;
   float blocked = u_useObs * step(127.5, ob.r);
   float dz = u_useObs * (ob.g - 128.0) * 0.05;

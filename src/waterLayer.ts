@@ -63,6 +63,7 @@ export class WaterLayer implements CustomLayerInterface {
   readonly renderingMode = '2d' as const;
   /** bumped every drawn frame so MapLibre re-drapes the water onto 3D terrain */
   terrainTileRevision = 0;
+  private drawKey = '';
 
   private map!: MlMap;
   private gl!: GL;
@@ -439,6 +440,10 @@ export class WaterLayer implements CustomLayerInterface {
     if (!this.progs || ctx !== gl) return;
     gl.disable(gl.BLEND); gl.disable(gl.DEPTH_TEST); gl.disable(gl.STENCIL_TEST); gl.disable(gl.SCISSOR_TEST); gl.disable(gl.CULL_FACE);
     gl.colorMask(true, true, true, true);
+    const pr = this.params;
+    const drawKey = `${pr.minDepthM}|${pr.opacity}|${pr.showObstacles}|${pr.particles}`;
+    const changed = !pr.paused || !!this.pending || !!this.pendingObs || this.clearRequested || this.bedDirty || drawKey !== this.drawKey;
+    this.drawKey = drawKey;
     try {
       if (this.pending) { this.applyPending(this.pending); this.pending = null; this.invalidateStats(); }
       if (!this.grid || !this.state) return;
@@ -461,10 +466,13 @@ export class WaterLayer implements CustomLayerInterface {
       if (!this.params.paused) simSeconds = this.step(frameDt);
       this.reduceAndRead();
       if (this.params.particles) this.updateParticles(simSeconds);
-      this.terrainTileRevision++;
     } finally {
       gl.bindVertexArray(null);
       gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+      // MapLibre picks draped tiles before prerender, so a change shows from the next frame on
+      if (changed) this.terrainTileRevision++;
+      const redrape = changed && !!this.map.getTerrain();
+      if (redrape || !pr.paused || this.pending || this.statsDirty) this.map.triggerRepaint();
     }
   }
 
@@ -503,7 +511,6 @@ export class WaterLayer implements CustomLayerInterface {
       gl.drawArrays(gl.POINTS, 0, PARTICLE_TEX * PARTICLE_TEX);
     }
     gl.bindVertexArray(null);
-    if (!this.params.paused || this.pending || this.statsDirty) this.map.triggerRepaint();
   }
 
   get demZoomLevel() { return this.demZoom; }

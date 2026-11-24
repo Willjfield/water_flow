@@ -1,11 +1,12 @@
 import { MercatorCoordinate, type CustomLayerInterface, type CustomRenderMethodInput, type LngLat, type Map as MlMap } from 'maplibre-gl';
 import { type GL, PingPong, Program, Target, createTexture, mul4 } from './gl';
 import { type Grid, computeGrid, gridStillValid, tileInCells } from './grid';
-import { type DemTile, loadDem } from './elevation';
-import { type ObstacleSource, rasterizeObstacles } from './obstacles';
+import { type DemSampler, type DemTile, demSampler, loadDem } from './elevation';
+import { type ObstacleRaster, type ObstacleSource, rasterizeObstacles } from './obstacles';
+import { MAX_CUT_M } from './channels';
 import * as S from './shaders';
 
-export type Mode = 'rain' | 'pour';
+export type Mode = 'rain' | 'pour' | 'box';
 
 export interface SimParams {
   mode: Mode;
@@ -22,6 +23,7 @@ export interface SimParams {
   showObstacles: boolean;
   seaSink: boolean;
   keepWater: boolean;
+  openBridges: boolean;
   paused: boolean;
   cellPx: number;
 }
@@ -43,8 +45,11 @@ interface PendingGrid {
   grid: Grid;
   dem: DemTile[];
   demZoom: number;
-  obs: Uint8Array | null;
+  sampler: DemPromise;
+  obs: ObstacleRaster | null;
 }
+
+type DemPromise = Promise<{ sampler: DemSampler; zoom: number } | null>;
 
 const G = 9.81;
 const CFL = 0.6;
@@ -72,6 +77,9 @@ export class WaterLayer implements CustomLayerInterface {
   private bed: Target | null = null;
   private obsTex: WebGLTexture | null = null;
   private dummyObs!: WebGLTexture;
+  private ovTex: WebGLTexture | null = null;
+  private dummyOv!: WebGLTexture;
+  private sampler: DemPromise = Promise.resolve(null);
   private reduce: Target[] = [];
   private particles: PingPong | null = null;
   private pbo!: WebGLBuffer;
@@ -79,7 +87,7 @@ export class WaterLayer implements CustomLayerInterface {
   private readback = new Float32Array(4);
 
   private pending: PendingGrid | null = null;
-  private pendingObs: { grid: Grid; data: Uint8Array | null } | null = null;
+  private pendingObs: { grid: Grid; data: ObstacleRaster | null } | null = null;
   private bedDirty = false;
   private clearRequested = false;
   /** Stats no longer describe the water state; keep drawing (even when paused) until a fresh readback lands. */
@@ -94,6 +102,8 @@ export class WaterLayer implements CustomLayerInterface {
   private moveTimer: number | undefined;
 
   pourAt: LngLat | null = null;
+  /** opposite corners of the box that pours in 'box' mode */
+  pourBox: [LngLat, LngLat] | null = null;
   obstacleSource: ObstacleSource | null = null;
   stats: SimStats = { status: 'starting', obstacles: 'off', substeps: 0, dt: 0, speed: 0, maxDepth: 0, volume: 0, wetCells: 0, simTime: 0 };
   onStats?: (s: SimStats) => void;
@@ -137,6 +147,7 @@ export class WaterLayer implements CustomLayerInterface {
     this.quadVao = vao([0, 0, 1, 0, 0, 1, 0, 1, 1, 0, 1, 1]);
     this.emptyVao = gl.createVertexArray()!;
     this.dummyObs = createTexture(gl, 1, 1, { internal: gl.RGBA8, format: gl.RGBA, type: gl.UNSIGNED_BYTE, data: new Uint8Array([0, 128, 0, 255]) });
+    this.dummyOv = createTexture(gl, 1, 1, { internal: gl.R32F, format: gl.RED, type: gl.FLOAT, data: new Float32Array([1e9]) });
     this.pbo = gl.createBuffer()!;
     gl.bindBuffer(gl.PIXEL_PACK_BUFFER, this.pbo);
     gl.bufferData(gl.PIXEL_PACK_BUFFER, 16, gl.STREAM_READ);
@@ -154,7 +165,9 @@ export class WaterLayer implements CustomLayerInterface {
     this.state?.dispose(); this.dem?.dispose(); this.bed?.dispose(); this.particles?.dispose();
     this.reduce.forEach((r) => r.dispose());
     if (this.obsTex) gl.deleteTexture(this.obsTex);
+    if (this.ovTex) gl.deleteTexture(this.ovTex);
     gl.deleteTexture(this.dummyObs);
+    gl.deleteTexture(this.dummyOv);
     Object.values(this.progs ?? {}).forEach((p) => p.dispose());
     this.buffers.forEach((b) => gl.deleteBuffer(b));
     gl.deleteBuffer(this.pbo);
@@ -173,10 +186,15 @@ export class WaterLayer implements CustomLayerInterface {
     const grid = computeGrid(this.map, this.params.cellPx);
     this.setStatus('loading elevation…');
     try {
-      const [dem, obs] = await Promise.all([loadDem(grid), this.loadObstacles(grid)]);
+      const demP = loadDem(grid);
+      const sampler: DemPromise = demP.then((d) => {
+        const s = demSampler(d.tiles);
+        return s ? { sampler: s, zoom: d.zoom } : null;
+      }).catch(() => null);
+      const [dem, obs] = await Promise.all([demP, this.loadObstacles(grid, sampler)]);
       if (gen !== this.gen) return;
       if (!dem.tiles.length) throw new Error('no Mapterhorn tiles available here');
-      this.pending = { grid, dem: dem.tiles, demZoom: dem.zoom, obs };
+      this.pending = { grid, dem: dem.tiles, demZoom: dem.zoom, sampler, obs };
       this.setStatus(dem.missing ? `running (${dem.missing} DEM tiles missing)` : 'running');
       this.map.triggerRepaint();
     } catch (e) {
@@ -188,14 +206,14 @@ export class WaterLayer implements CustomLayerInterface {
   async reloadObstacles() {
     if (!this.grid) return;
     const grid = this.grid;
-    const data = await this.loadObstacles(grid);
+    const data = await this.loadObstacles(grid, this.sampler);
     if (grid === this.grid) {
       this.pendingObs = { grid, data };
       this.map.triggerRepaint();
     }
   }
 
-  private async loadObstacles(grid: Grid): Promise<Uint8Array | null> {
+  private async loadObstacles(grid: Grid, dem: DemPromise): Promise<ObstacleRaster | null> {
     const gen = ++this.obsGen;
     const src = await this.resolveObstacleSource(grid).catch(() => null);
     this.obstacleSource = src;
@@ -205,9 +223,11 @@ export class WaterLayer implements CustomLayerInterface {
     }
     this.stats.obstacles = `loading ${src.name}…`;
     try {
-      const r = await rasterizeObstacles(grid, src);
-      if (gen === this.obsGen) this.stats.obstacles = r ? `${src.name}: ${r.features} features / ${r.tiles} tiles` : `${src.name}: zoom in (cells > 12 m)`;
-      return r?.data ?? null;
+      const r = await rasterizeObstacles(grid, src, dem);
+      const ov = r?.bedOverride;
+      const opened = ov ? ` · opened ${ov.bridges} bridge crossings, ${ov.burned} channels` : '';
+      if (gen === this.obsGen) this.stats.obstacles = r ? `${src.name}: ${r.features} features / ${r.tiles} tiles${opened}` : `${src.name}: zoom in (cells > 12 m)`;
+      return r;
     } catch (e) {
       this.stats.obstacles = `error: ${(e as Error).message}`;
       return null;
@@ -283,6 +303,7 @@ export class WaterLayer implements CustomLayerInterface {
     this.bed = new Target(gl, g.nx, g.ny);
     this.grid = g;
     this.demZoom = p.demZoom;
+    this.sampler = p.sampler;
     this.setObstacles(p.obs);
     this.reduce = [];
     for (let w = g.nx, h = g.ny; ;) {
@@ -294,16 +315,20 @@ export class WaterLayer implements CustomLayerInterface {
     this.stats.grid = { nx: g.nx, ny: g.ny, dx: g.dx, demZoom: p.demZoom };
   }
 
-  private setObstacles(data: Uint8Array | null) {
+  private setObstacles(r: ObstacleRaster | null) {
     const gl = this.gl, g = this.grid!;
     if (this.obsTex) gl.deleteTexture(this.obsTex);
-    this.obsTex = data ? createTexture(gl, g.nx, g.ny, { internal: gl.RGBA8, format: gl.RGBA, type: gl.UNSIGNED_BYTE, data }) : null;
+    if (this.ovTex) gl.deleteTexture(this.ovTex);
+    this.obsTex = r ? createTexture(gl, g.nx, g.ny, { internal: gl.RGBA8, format: gl.RGBA, type: gl.UNSIGNED_BYTE, data: r.data }) : null;
+    const ov = r?.bedOverride?.bed;
+    this.ovTex = ov ? createTexture(gl, g.nx, g.ny, { internal: gl.R32F, format: gl.RED, type: gl.FLOAT, data: ov }) : null;
     this.bedDirty = true;
   }
 
   private computeBed() {
     this.progs.bed.use().tex('u_dem', 0, this.dem!.tex).tex('u_obs', 1, this.obsTex ?? this.dummyObs)
-      .f('u_useObs', this.obsTex ? 1 : 0).f('u_baseN', this.params.manningN);
+      .tex('u_ov', 2, this.ovTex ?? this.dummyOv)
+      .f('u_useObs', this.obsTex ? 1 : 0).f('u_useOv', this.ovTex && this.params.openBridges ? 1 : 0).f('u_maxCut', MAX_CUT_M).f('u_baseN', this.params.manningN);
     this.fullscreen(this.bed!);
     this.bedDirty = false;
   }
@@ -340,12 +365,21 @@ export class WaterLayer implements CustomLayerInterface {
       const m = MercatorCoordinate.fromLngLat(this.pourAt);
       pour = [(m.x - g.x0) / g.cell, (m.y - g.y0) / g.cell, Math.max(1.5, p.brushRadiusM / g.dx), p.pourMmPerS / 1000];
     }
+    let box: [number, number, number, number] = [0, 0, 0, 0], boxRate = 0;
+    if (p.mode === 'box' && this.pourBox) {
+      const [a, b] = this.pourBox.map((ll) => MercatorCoordinate.fromLngLat(ll)).map((m) => [(m.x - g.x0) / g.cell, (m.y - g.y0) / g.cell]);
+      // grow sub-cell boxes to one cell so a tiny box still pours
+      const lo = [0, 1].map((k) => Math.min(a[k], b[k])), hi = [0, 1].map((k) => Math.max(a[k], b[k]));
+      for (const k of [0, 1]) if (hi[k] - lo[k] < 1) { const mid = (lo[k] + hi[k]) / 2; lo[k] = mid - 0.5; hi[k] = mid + 0.5; }
+      box = [lo[0], lo[1], hi[0], hi[1]];
+      boxRate = p.pourMmPerS / 1000;
+    }
     for (let i = 0; i < n; i++) {
       this.bindCell(this.progs.flux, st.read.tex).f('u_dt', dt).f('u_dx', g.dx).f('u_theta', 0.8).f('u_vmax', 15);
       this.fullscreen(st.write);
       st.swap();
       this.bindCell(this.progs.depth, st.read.tex).f('u_dt', dt).f('u_dx', g.dx).f('u_rain', rain)
-        .f4('u_pour', ...pour).f('u_infil', p.infilMmPerHr / 1000 / 3600).f('u_seaSink', p.seaSink ? 1 : 0);
+        .f4('u_pour', ...pour).f4('u_box', ...box).f('u_boxRate', boxRate).f('u_infil', p.infilMmPerHr / 1000 / 3600).f('u_seaSink', p.seaSink ? 1 : 0);
       this.fullscreen(st.write);
       st.swap();
     }

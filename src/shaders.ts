@@ -61,17 +61,21 @@ void main() {
 export const BED_FS = `${HEAD}
 uniform sampler2D u_dem;
 uniform sampler2D u_obs;
+uniform sampler2D u_ov;  // absolute bed override (bridge breaching); huge = none
 uniform float u_useObs;
+uniform float u_useOv;
+uniform float u_maxCut;
 uniform float u_baseN;
 out vec4 o;
 void main() {
   ivec2 c = ivec2(gl_FragCoord.xy);
   float dem = texelFetch(u_dem, c, 0).r;
+  float base = u_useOv > 0.5 ? max(min(dem, texelFetch(u_ov, c, 0).r), dem - u_maxCut) : dem;
   vec4 ob = texelFetch(u_obs, c, 0) * 255.0;
   float blocked = u_useObs * step(127.5, ob.r);
   float dz = u_useObs * (ob.g - 128.0) * 0.05;
   float n = (u_useObs > 0.5 && ob.b > 0.5) ? ob.b / 1000.0 : u_baseN;
-  o = vec4(dem + dz, blocked, n, dem);
+  o = vec4(base + dz, blocked, n, dem);
 }
 `;
 
@@ -126,6 +130,8 @@ uniform float u_dt;
 uniform float u_dx;
 uniform float u_rain;     // m/s over the whole grid
 uniform vec4 u_pour;      // xy centre (cells), z radius (cells), w rate (m/s)
+uniform vec4 u_box;       // xy min, zw max (cells)
+uniform float u_boxRate;  // m/s inside u_box
 uniform float u_infil;    // m/s
 uniform float u_seaSink;  // 1 = cells with DEM <= 0 drain
 out vec4 o;
@@ -142,6 +148,10 @@ void main() {
   if (u_pour.w > 0.0) {
     float d = distance(vec2(c) + 0.5, u_pour.xy);
     src += u_pour.w * (1.0 - smoothstep(0.6 * u_pour.z, u_pour.z, d));
+  }
+  if (u_boxRate > 0.0) {
+    vec2 p = vec2(c) + 0.5;
+    if (all(greaterThanEqual(p, u_box.xy)) && all(lessThanEqual(p, u_box.zw))) src += u_boxRate;
   }
   h += u_dt * (src - u_infil);
   if (b.g > 0.5 || (u_seaSink > 0.5 && b.a <= 0.0)) h = 0.0;

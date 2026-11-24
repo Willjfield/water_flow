@@ -24,6 +24,7 @@ osmium tags-filter --overwrite "$SRC" \
   nwr/building \
   w/highway w/railway w/barrier w/waterway \
   w/embankment=yes w/man_made=embankment,dyke,levee \
+  nwr/natural=water r/waterway=riverbank nwr/man_made=bridge \
   -o "$TMP/filtered.osm.pbf"
 
 osmium export --overwrite -c "$HERE/osmium-export.json" -f geojsonseq \

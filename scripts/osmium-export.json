@@ -1,6 +1,6 @@
 {
   "attributes": { "type": false, "id": false, "version": false, "changeset": false, "timestamp": false, "uid": false, "user": false, "way_nodes": false },
   "linear_tags": true,
-  "area_tags": ["building"],
+  "area_tags": ["building", "natural=water", "waterway=riverbank", "man_made=bridge"],
   "exclude_tags": []
 }

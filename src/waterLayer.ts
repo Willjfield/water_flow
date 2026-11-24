@@ -1,4 +1,4 @@
-import { MercatorCoordinate, type CustomLayerInterface, type CustomRenderMethodInput, type LngLat, type Map as MlMap } from 'maplibre-gl';
+import { MercatorCoordinate, type CustomLayerInterface, type CustomRenderMethodInput, type CustomTerrainRenderInput, type LngLat, type Map as MlMap } from 'maplibre-gl';
 import { type GL, PingPong, Program, Target, createTexture, mul4 } from './gl';
 import { type Grid, computeGrid, gridStillValid, tileInCells } from './grid';
 import { type DemSampler, type DemTile, demSampler, loadDem } from './elevation';
@@ -61,6 +61,9 @@ export class WaterLayer implements CustomLayerInterface {
   readonly id = 'water-sim';
   readonly type = 'custom' as const;
   readonly renderingMode = '2d' as const;
+  /** bumped every drawn frame so MapLibre re-drapes the water onto 3D terrain */
+  terrainTileRevision = 0;
+  private drawKey = '';
 
   private map!: MlMap;
   private gl!: GL;
@@ -437,6 +440,10 @@ export class WaterLayer implements CustomLayerInterface {
     if (!this.progs || ctx !== gl) return;
     gl.disable(gl.BLEND); gl.disable(gl.DEPTH_TEST); gl.disable(gl.STENCIL_TEST); gl.disable(gl.SCISSOR_TEST); gl.disable(gl.CULL_FACE);
     gl.colorMask(true, true, true, true);
+    const pr = this.params;
+    const drawKey = `${pr.minDepthM}|${pr.opacity}|${pr.showObstacles}|${pr.particles}`;
+    const changed = !pr.paused || !!this.pending || !!this.pendingObs || this.clearRequested || this.bedDirty || drawKey !== this.drawKey;
+    this.drawKey = drawKey;
     try {
       if (this.pending) { this.applyPending(this.pending); this.pending = null; this.invalidateStats(); }
       if (!this.grid || !this.state) return;
@@ -462,15 +469,32 @@ export class WaterLayer implements CustomLayerInterface {
     } finally {
       gl.bindVertexArray(null);
       gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+      // MapLibre picks draped tiles before prerender, so a change shows from the next frame on
+      if (changed) this.terrainTileRevision++;
+      const redrape = changed && !!this.map.getTerrain();
+      if (redrape || !pr.paused || this.pending || this.statsDirty) this.map.triggerRepaint();
     }
   }
 
   render(ctx: WebGLRenderingContext | WebGL2RenderingContext, opts: CustomRenderMethodInput) {
+    this.draw(ctx, opts.defaultProjectionData.mainMatrix as ArrayLike<number>);
+  }
+
+  /** With 3D terrain on, MapLibre drapes the layer: draw it into each terrain tile instead of at sea level. */
+  renderToTerrainTile(ctx: WebGL2RenderingContext, opts: CustomTerrainRenderInput) {
+    const { z, x, y } = opts.tileID.canonical;
+    const n = Math.pow(2, z), tx = x + (opts.tileID.wrap ?? 0) * n;
+    // mercator -> tile clip space, tile top at clip y = +1 (matches MapLibre's RTT ortho)
+    const tileM = [2 * n, 0, 0, 0, 0, -2 * n, 0, 0, 0, 0, 1, 0, -2 * tx - 1, 2 * y + 1, 0, 1];
+    this.draw(ctx, tileM);
+  }
+
+  private draw(ctx: WebGLRenderingContext | WebGL2RenderingContext, mercToClip: ArrayLike<number>) {
     const gl = this.gl;
     if (!this.progs || !this.grid || !this.state || !this.bed || ctx !== gl) return;
     const g = this.grid;
     const gridM = [g.nx * g.cell, 0, 0, 0, 0, g.ny * g.cell, 0, 0, 0, 0, 1, 0, g.x0, g.y0, 0, 1];
-    const m = mul4(opts.defaultProjectionData.mainMatrix as ArrayLike<number>, gridM);
+    const m = mul4(mercToClip, gridM);
     gl.disable(gl.DEPTH_TEST); gl.disable(gl.STENCIL_TEST); gl.disable(gl.CULL_FACE);
     gl.enable(gl.BLEND);
     gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
@@ -487,7 +511,6 @@ export class WaterLayer implements CustomLayerInterface {
       gl.drawArrays(gl.POINTS, 0, PARTICLE_TEX * PARTICLE_TEX);
     }
     gl.bindVertexArray(null);
-    if (!this.params.paused || this.pending || this.statsDirty) this.map.triggerRepaint();
   }
 
   get demZoomLevel() { return this.demZoom; }

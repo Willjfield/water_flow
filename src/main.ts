@@ -71,7 +71,7 @@ layer.onError = (msg) => showError(msg);
 
 map.on('load', () => {
   map.setProjection({ type: 'mercator' });
-  map.addSource('mapterhorn', {
+  if (!map.getSource('mapterhorn')) map.addSource('mapterhorn', {
     type: 'raster-dem',
     tiles: [MAPTERHORN_URL],
     encoding: 'terrarium',
@@ -80,7 +80,8 @@ map.on('load', () => {
     attribution: '<a href="https://mapterhorn.com/attribution">© Mapterhorn</a>',
   });
   const firstSymbol = map.getStyle().layers.find((l) => l.type === 'symbol')?.id;
-  map.addLayer(
+  const hasHillshade = map.getStyle().layers.some((l) => l.type === 'hillshade');
+  if (!hasHillshade) map.addLayer(
     { id: 'hillshade', type: 'hillshade', source: 'mapterhorn', paint: { 'hillshade-exaggeration': 0.35, 'hillshade-shadow-color': '#5a5a6a' } },
     firstSymbol,
   );

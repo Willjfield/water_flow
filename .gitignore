@@ -3,3 +3,4 @@ dist
 *.osm.pbf
 .DS_Store
 __pycache__
+package-lock.json

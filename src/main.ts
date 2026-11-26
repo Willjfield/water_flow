@@ -87,6 +87,7 @@ map.on('load', () => {
     firstSymbol,
   );
   map.addLayer(layer, firstSymbol);
+  init3dBuildings();
   map.addSource('pour-brush', { type: 'geojson', data: EMPTY });
   map.addLayer({ id: 'pour-brush-fill', type: 'fill', source: 'pour-brush', paint: { 'fill-color': '#1b6fd1', 'fill-opacity': 0.08 } });
   map.addLayer({ id: 'pour-brush-casing', type: 'line', source: 'pour-brush', paint: { 'line-color': '#fff', 'line-width': 3.5, 'line-opacity': 0.9 } });
@@ -196,6 +197,21 @@ function bindCheck(id: string, key: keyof SimParams, onChange?: () => void) {
     onChange?.();
     map.triggerRepaint();
   });
+}
+
+// The style's fill-extrusion layers draw over the water and hide it, so they start hidden.
+// Zero opacity skips drawing but keeps the tile buckets, so turning them back on is instant.
+function init3dBuildings() {
+  const layers = map.getStyle().layers
+    .filter((l) => l.type === 'fill-extrusion')
+    .map((l) => ({ id: l.id, opacity: map.getPaintProperty(l.id, 'fill-extrusion-opacity') ?? 1 }));
+  if (!layers.length) return;
+  const input = $<HTMLInputElement>('buildings3d');
+  const apply = () => layers.forEach((l) => map.setPaintProperty(l.id, 'fill-extrusion-opacity', input.checked ? l.opacity : 0));
+  input.checked = false;
+  input.addEventListener('change', apply);
+  apply();
+  $('buildings3d-row').hidden = false;
 }
 
 const n0 = (v: number) => v.toFixed(0);

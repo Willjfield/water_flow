@@ -106,9 +106,9 @@ export class Target {
 export class PingPong {
   a: Target;
   b: Target;
-  constructor(gl: GL, w: number, h: number, init?: Float32Array) {
-    this.a = new Target(gl, w, h, init ? rgba32f(gl, w, h, init) : undefined);
-    this.b = new Target(gl, w, h);
+  constructor(gl: GL, w: number, h: number, init?: Float32Array, make?: () => WebGLTexture) {
+    this.a = new Target(gl, w, h, init ? rgba32f(gl, w, h, init) : make?.());
+    this.b = new Target(gl, w, h, make?.());
   }
   get read() { return this.a; }
   get write() { return this.b; }

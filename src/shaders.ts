@@ -254,30 +254,84 @@ void main() {
 }
 `;
 
+/** Each particle is a soft streak along the local flow, longer and wider the faster the water moves. */
 export const PARTICLE_VS = `${HEAD}
+${CELL_HELPERS}
 uniform sampler2D u_particles;
 uniform vec2 u_gridSize;
 uniform mat4 u_matrix;
-uniform float u_pointSize;
+uniform vec2 u_viewport;
+uniform float u_dpr;
 uniform float u_maxAge;
+uniform float u_density;  // dims the streaks when all particles crowd into a small wet area
 out float v_alpha;
+out vec2 v_uv;
+const vec2 Q[6] = vec2[6](vec2(0, -1), vec2(1, -1), vec2(0, 1), vec2(0, 1), vec2(1, -1), vec2(1, 1));
 void main() {
   ivec2 n = textureSize(u_particles, 0);
-  vec4 p = texelFetch(u_particles, ivec2(gl_VertexID % n.x, gl_VertexID / n.x), 0);
+  int id = gl_VertexID / 6;
+  vec4 p = texelFetch(u_particles, ivec2(id % n.x, id / n.x), 0);
   float age = p.z / u_maxAge;
   v_alpha = p.w > 0.0 ? clamp(0.25 + p.w / 1.5, 0.0, 1.0) * smoothstep(0.0, 0.1, age) * (1.0 - smoothstep(0.8, 1.0, age)) : 0.0;
-  gl_Position = v_alpha > 0.0 ? u_matrix * vec4(p.xy / u_gridSize, 0.0, 1.0) : vec4(2.0, 2.0, 2.0, 1.0);
-  gl_PointSize = u_pointSize;
+  v_alpha *= u_density;
+  if (v_alpha <= 0.0) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); return; }
+  vec4 s = S(clamp(ivec2(floor(p.xy)), ivec2(0), u_size - 1));
+  vec2 v = s.r > 1e-3 ? s.gb / s.r : vec2(0.0);
+  vec2 dir = length(v) > 1e-6 ? normalize(v) : vec2(1.0, 0.0);
+  vec4 head = u_matrix * vec4(p.xy / u_gridSize, 0.0, 1.0);
+  vec4 back = u_matrix * vec4((p.xy - dir) / u_gridSize, 0.0, 1.0);
+  vec2 hs = head.xy / head.w * 0.5 * u_viewport;
+  vec2 d = hs - back.xy / back.w * 0.5 * u_viewport;
+  vec2 ax = length(d) > 1e-4 ? normalize(d) : vec2(1.0, 0.0);
+  float len = mix(2.0, 14.0, smoothstep(0.05, 2.0, p.w)) * u_dpr;
+  float wid = mix(1.0, 2.4, smoothstep(0.1, 2.0, p.w)) * u_dpr;
+  vec2 q = Q[gl_VertexID % 6];
+  v_uv = q;
+  vec2 px = hs + ax * (mix(-len, 0.0, q.x) + (2.0 * q.x - 1.0) * wid) + vec2(-ax.y, ax.x) * q.y * wid;
+  gl_Position = vec4(px / (0.5 * u_viewport) * head.w, head.z, head.w);
 }
 `;
 
 export const PARTICLE_FS = `${HEAD}
 in float v_alpha;
+in vec2 v_uv;
 out vec4 o;
 void main() {
-  float d = length(gl_PointCoord - 0.5);
-  float a = v_alpha * (1.0 - smoothstep(0.3, 0.5, d)) * 0.9;
-  o = vec4(vec3(1.0) * a, a);
+  // bright soft head, fading tail, soft sides
+  float a = v_alpha * 0.45 * (1.0 - smoothstep(0.2, 1.0, abs(v_uv.y))) * smoothstep(0.0, 0.85, v_uv.x) * (1.0 - smoothstep(0.85, 1.0, v_uv.x));
+  if (a <= 0.003) discard;
+  o = vec4(vec3(a), a);
+}
+`;
+
+/**
+ * Foam, carried along by the flow (semi-Lagrangian) and decaying. It forms where the flow is fast and shallow
+ * (high Froude number) and where velocity changes sharply between neighbours: hydraulic jumps, wakes and
+ * flow squeezing past obstacles.
+ */
+export const FOAM_FS = `${HEAD}
+${CELL_HELPERS}
+uniform sampler2D u_foam;
+uniform float u_dt;
+uniform float u_dx;
+uniform float u_minDepth;
+out vec4 o;
+vec2 vel(ivec2 c) {
+  if (!inside(c)) return vec2(0.0);
+  vec4 s = S(c);
+  return s.r < u_minDepth ? vec2(0.0) : s.gb / s.r;
+}
+void main() {
+  ivec2 c = ivec2(gl_FragCoord.xy);
+  vec4 s = S(c);
+  if (s.r < u_minDepth) { o = vec4(0.0); return; }
+  vec2 v = vel(c);
+  float f = texture(u_foam, (vec2(c) + 0.5 - v * u_dt / u_dx) / vec2(u_size)).r;
+  float speed = length(v);
+  float fr = speed / sqrt(G * s.r);
+  float shear = length(vel(c + ivec2(1, 0)) - vel(c - ivec2(1, 0))) + length(vel(c + ivec2(0, 1)) - vel(c - ivec2(0, 1)));
+  float src = (0.6 * smoothstep(1.5, 3.0, fr) + smoothstep(1.0, 3.0, shear)) * smoothstep(0.3, 1.0, speed) * smoothstep(0.03, 0.1, s.r);
+  o = vec4(min(f * exp(-u_dt / 8.0) + src * min(u_dt, 2.0) * 0.5, 1.0), 0.0, 0.0, 0.0);
 }
 `;
 
@@ -300,7 +354,26 @@ uniform vec3 u_sun;      // unit vector towards the sun
 uniform vec3 u_sigma;    // extinction per metre of depth
 uniform vec3 u_body;     // colour the water body tends to with depth
 uniform vec3 u_sky;
+uniform sampler2D u_foam;
+uniform float u_time;        // real seconds, so ripples move at the real flow speed
+uniform vec2 u_cellOrigin;   // grid origin in world cells (mod 4096), keeps the ripple pattern fixed to the ground
+uniform float u_rippleCells; // ripple wavelength in cells
 out vec4 o;
+float hash2(vec2 p) {
+  p = mod(p, 4096.0);
+  vec3 p3 = fract(vec3(p.xyx) * 0.1031);
+  p3 += dot(p3, p3.yzx + 33.33);
+  return fract((p3.x + p3.y) * p3.z);
+}
+float vnoise(vec2 x) {
+  vec2 i = floor(x), f = fract(x), u = f * f * (3.0 - 2.0 * f);
+  return mix(mix(hash2(i), hash2(i + vec2(1, 0)), u.x), mix(hash2(i + vec2(0, 1)), hash2(i + vec2(1, 1)), u.x), u.y);
+}
+float ripples(vec2 x) { return 0.65 * vnoise(x) + 0.35 * vnoise(x * 2.3 + 17.0); }
+vec2 rippleGrad(vec2 x) {
+  float n0 = ripples(x);
+  return vec2(ripples(x + vec2(0.15, 0.0)) - n0, ripples(x + vec2(0.0, 0.15)) - n0) / 0.15;
+}
 float H(ivec2 c) { c = clamp(c, ivec2(0), u_size - 1); return S(c).r; }
 float eta(ivec2 c, float fallback) {
   c = clamp(c, ivec2(0), u_size - 1);
@@ -323,7 +396,16 @@ void main() {
     float e0 = S(c).r + B(c).r;
     float dEast = (eta(c + ivec2(1, 0), e0) - eta(c - ivec2(1, 0), e0)) / (2.0 * u_dx);
     float dNorth = -(eta(c + ivec2(0, 1), e0) - eta(c - ivec2(0, 1), e0)) / (2.0 * u_dx);
-    vec3 n = normalize(vec3(-dEast * u_slopeGain, -dNorth * u_slopeGain, 1.0));
+    // flow map: two copies of the ripple pattern dragged along the flow, each restarting while the other is at full weight
+    vec4 sc = S(c);
+    vec2 vel = sc.r > 1e-3 ? sc.gb / sc.r : vec2(0.0);
+    float spd = length(vel);
+    if (spd > 4.0) { vel *= 4.0 / spd; spd = 4.0; }
+    vec2 wp = (v_cell + u_cellOrigin) / u_rippleCells, flow = vel / (u_rippleCells * u_dx) * 2.5;
+    float ph0 = fract(u_time * 0.4), ph1 = fract(u_time * 0.4 + 0.5), w0 = 1.0 - abs(2.0 * ph0 - 1.0);
+    vec2 a0 = wp - flow * ph0, a1 = wp - flow * ph1 + 0.37;
+    vec2 rg = (rippleGrad(a0) * w0 + rippleGrad(a1) * (1.0 - w0)) * (0.04 + 0.25 * smoothstep(0.05, 1.5, spd));
+    vec3 n = normalize(vec3(-dEast * u_slopeGain - rg.x, -dNorth * u_slopeGain - rg.y, 1.0));
     float cosV = max(dot(n, u_view), 0.0);
     float F = 0.02 + 0.98 * pow(1.0 - cosV, 5.0);
     vec3 T = exp(-u_sigma * h);
@@ -331,6 +413,10 @@ void main() {
     float glint = pow(max(dot(n, hv), 0.0), 180.0) * 1.2 * max(u_sun.z, 0.0);
     trans = mix(vec3(1.0), T * (1.0 - F), cover);
     add = cover * (u_body * (1.0 - T) * (1.0 - F) + u_sky * F + vec3(glint));
+    float fn = ripples(a0 * 1.7) * w0 + ripples(a1 * 1.7) * (1.0 - w0);
+    float foam = cover * 0.8 * smoothstep(0.35, 1.0, texture(u_foam, v_cell / vec2(u_size)).r * (0.5 + fn));
+    trans *= 1.0 - 0.85 * foam;
+    add = mix(add, vec3(0.9, 0.92, 0.93), foam);
   }
   // wet ground is darker, both at the soaked fringe and under the water itself
   trans *= mix(1.0, 0.72, damp);

@@ -14,6 +14,7 @@ const LOOKS: Record<Exclude<WaterLook, 'simple'>, { sigma: [number, number, numb
   clear: { sigma: [6.0, 2.0, 1.2], body: [0.02, 0.1, 0.14] },
   muddy: { sigma: [6.0, 7.5, 10.0], body: [0.21, 0.17, 0.1] },
 };
+const mod = (a: number, n: number) => ((a % n) + n) % n;
 const SKY: [number, number, number] = [0.62, 0.72, 0.85];
 // sun from the north-west at 40 degrees, matching the usual hillshade lighting
 const SUN: [number, number, number] = [-0.5417, 0.5417, 0.6428];
@@ -78,7 +79,7 @@ export class WaterLayer implements CustomLayerInterface {
 
   private map!: MlMap;
   private gl!: GL;
-  private progs!: Record<'dem' | 'bed' | 'flux' | 'depth' | 'reduce' | 'resample' | 'pupdate' | 'pdraw' | 'water' | 'waterReal', Program>;
+  private progs!: Record<'dem' | 'bed' | 'flux' | 'depth' | 'reduce' | 'resample' | 'pupdate' | 'pdraw' | 'water' | 'waterReal' | 'foam', Program>;
   private triVao!: WebGLVertexArrayObject;
   private quadVao!: WebGLVertexArrayObject;
   private emptyVao!: WebGLVertexArrayObject;
@@ -96,6 +97,8 @@ export class WaterLayer implements CustomLayerInterface {
   private sampler: DemPromise = Promise.resolve(null);
   private reduce: Target[] = [];
   private particles: PingPong | null = null;
+  private foam: PingPong | null = null;
+  private readonly t0 = performance.now();
   private pbo!: WebGLBuffer;
   private fence: WebGLSync | null = null;
   private readback = new Float32Array(4);
@@ -145,6 +148,7 @@ export class WaterLayer implements CustomLayerInterface {
       pdraw: P(S.PARTICLE_VS, S.PARTICLE_FS),
       water: P(S.WATER_VS, S.WATER_FS),
       waterReal: P(S.WATER_VS, S.WATER_REAL_FS),
+      foam: P(S.FULLSCREEN_VS, S.FOAM_FS),
     };
     const vao = (data: number[]) => {
       const v = gl.createVertexArray()!;
@@ -177,7 +181,7 @@ export class WaterLayer implements CustomLayerInterface {
   onRemove() {
     this.map.off('moveend', this.onMoveEnd);
     const gl = this.gl;
-    this.state?.dispose(); this.dem?.dispose(); this.bed?.dispose(); this.particles?.dispose();
+    this.state?.dispose(); this.dem?.dispose(); this.bed?.dispose(); this.particles?.dispose(); this.foam?.dispose();
     this.reduce.forEach((r) => r.dispose());
     if (this.obsTex) gl.deleteTexture(this.obsTex);
     if (this.ovTex) gl.deleteTexture(this.ovTex);
@@ -311,7 +315,9 @@ export class WaterLayer implements CustomLayerInterface {
       gl.clear(gl.COLOR_BUFFER_BIT);
     }
 
-    this.state?.dispose(); this.dem?.dispose(); this.bed?.dispose();
+    this.state?.dispose(); this.dem?.dispose(); this.bed?.dispose(); this.foam?.dispose();
+    this.foam = new PingPong(gl, g.nx, g.ny, undefined, () => createTexture(gl, g.nx, g.ny, { internal: gl.R16F, format: gl.RED, type: gl.HALF_FLOAT, filter: gl.LINEAR }));
+    for (const t of [this.foam.a, this.foam.b]) { t.bind(); gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT); }
     this.reduce.forEach((r) => r.dispose());
     this.state = state;
     this.dem = dem;
@@ -447,6 +453,14 @@ export class WaterLayer implements CustomLayerInterface {
     p.swap();
   }
 
+  private updateFoam(simSeconds: number) {
+    const g = this.grid!, f = this.foam!;
+    this.bindCell(this.progs.foam, this.state!.read.tex).tex('u_foam', 2, f.read.tex)
+      .f('u_dt', simSeconds).f('u_dx', g.dx).f('u_minDepth', this.params.minDepthM);
+    this.fullscreen(f.write);
+    f.swap();
+  }
+
   prerender(ctx: WebGLRenderingContext | WebGL2RenderingContext) {
     const gl = this.gl;
     if (!this.progs || ctx !== gl) return;
@@ -465,7 +479,7 @@ export class WaterLayer implements CustomLayerInterface {
         this.pendingObs = null;
       }
       if (this.clearRequested) {
-        for (const t of [this.state.a, this.state.b]) { t.bind(); gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT); }
+        for (const t of [this.state.a, this.state.b, ...(this.foam ? [this.foam.a, this.foam.b] : [])]) { t.bind(); gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT); }
         this.resetParticles();
         this.cmax = this.hmax = 0;
         this.clearRequested = false;
@@ -479,6 +493,7 @@ export class WaterLayer implements CustomLayerInterface {
       if (!this.params.paused) simSeconds = this.step(frameDt);
       this.reduceAndRead();
       if (this.params.particles) this.updateParticles(simSeconds);
+      if (pr.look !== 'simple' && simSeconds > 0) this.updateFoam(simSeconds);
     } finally {
       gl.bindVertexArray(null);
       gl.bindFramebuffer(gl.FRAMEBUFFER, null);
@@ -524,7 +539,9 @@ export class WaterLayer implements CustomLayerInterface {
       const prog = this.bindCell(this.progs.waterReal, this.state.read.tex).m4('u_matrix', m).f2('u_gridSize', g.nx, g.ny)
         .f('u_minDepth', pr.minDepthM).f('u_showObs', pr.showObstacles ? 1 : 0).f('u_dx', g.dx).f('u_slopeGain', 6)
         .f3('u_view', -Math.sin(b) * Math.sin(t), -Math.cos(b) * Math.sin(t), Math.cos(t))
-        .f3('u_sun', ...SUN).f3('u_sigma', ...sigma).f3('u_body', ...body).f3('u_sky', ...SKY);
+        .f3('u_sun', ...SUN).f3('u_sigma', ...sigma).f3('u_body', ...body).f3('u_sky', ...SKY)
+        .tex('u_foam', 2, this.foam!.read.tex).f('u_time', (performance.now() - this.t0) / 1000)
+        .f2('u_cellOrigin', mod(g.x0 / g.cell, 4096), mod(g.y0 / g.cell, 4096)).f('u_rippleCells', Math.max(1, 2 * g.dx) / g.dx);
       // pass 0 multiplies the map by the water's transmittance; pass 1 adds scattered and reflected light
       gl.blendFuncSeparate(gl.ZERO, gl.SRC_COLOR, gl.ZERO, gl.ONE);
       prog.f('u_pass', 0);
@@ -535,10 +552,12 @@ export class WaterLayer implements CustomLayerInterface {
     }
 
     if (this.params.particles && this.particles) {
-      this.progs.pdraw.use().tex('u_particles', 0, this.particles.read.tex).f2('u_gridSize', g.nx, g.ny).m4('u_matrix', m)
-        .f('u_pointSize', 1.6 * devicePixelRatio).f('u_maxAge', PARTICLE_MAX_AGE);
+      const vp = gl.getParameter(gl.VIEWPORT) as Int32Array;
+      this.bindCell(this.progs.pdraw, this.state.read.tex).tex('u_particles', 2, this.particles.read.tex).f2('u_gridSize', g.nx, g.ny).m4('u_matrix', m)
+        .f2('u_viewport', vp[2], vp[3]).f('u_dpr', devicePixelRatio).f('u_maxAge', PARTICLE_MAX_AGE)
+        .f('u_density', Math.min(1, Math.max(0.12, (this.stats.wetCells ?? 0) / (4 * PARTICLE_TEX * PARTICLE_TEX))));
       gl.bindVertexArray(this.emptyVao);
-      gl.drawArrays(gl.POINTS, 0, PARTICLE_TEX * PARTICLE_TEX);
+      gl.drawArrays(gl.TRIANGLES, 0, PARTICLE_TEX * PARTICLE_TEX * 6);
     }
     gl.bindVertexArray(null);
   }

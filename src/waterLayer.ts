@@ -68,6 +68,8 @@ const CFL = 0.6;
 const MAX_SUBSTEPS = 48;
 const PARTICLE_TEX = 256;
 const PARTICLE_MAX_AGE = 240;
+/** Foam is kept in any wet cell, independent of the Show depth display cutoff. */
+const FOAM_MIN_DEPTH_M = 0.001;
 
 export class WaterLayer implements CustomLayerInterface {
   readonly id = 'water-sim';
@@ -456,7 +458,7 @@ export class WaterLayer implements CustomLayerInterface {
   private updateFoam(simSeconds: number) {
     const g = this.grid!, f = this.foam!;
     this.bindCell(this.progs.foam, this.state!.read.tex).tex('u_foam', 2, f.read.tex)
-      .f('u_dt', simSeconds).f('u_dx', g.dx).f('u_minDepth', this.params.minDepthM);
+      .f('u_dt', simSeconds).f('u_dx', g.dx).f('u_minDepth', FOAM_MIN_DEPTH_M);
     this.fullscreen(f.write);
     f.swap();
   }

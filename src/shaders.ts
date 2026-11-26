@@ -315,7 +315,7 @@ void main() {
   float h = mix(mix(H(i), H(i + ivec2(1, 0)), f.x), mix(H(i + ivec2(0, 1)), H(i + ivec2(1, 1)), f.x), f.y);
   ivec2 c = clamp(ivec2(floor(v_cell)), ivec2(0), u_size - 1);
 
-  float cover = smoothstep(u_minDepth * 0.5, u_minDepth * 2.0, h);
+  float cover = smoothstep(u_minDepth, u_minDepth * 1.5, h);
   float damp = smoothstep(u_minDepth * 0.1, u_minDepth, h);  // wet ground under a thin film looks darker
 
   vec3 trans = vec3(1.0), add = vec3(0.0);

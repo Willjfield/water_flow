@@ -42,6 +42,7 @@ export class Program {
   i(name: string, v: number) { this.gl.uniform1i(this.loc(name), v); return this; }
   f(name: string, v: number) { this.gl.uniform1f(this.loc(name), v); return this; }
   f2(name: string, a: number, b: number) { this.gl.uniform2f(this.loc(name), a, b); return this; }
+  f3(name: string, a: number, b: number, c: number) { this.gl.uniform3f(this.loc(name), a, b, c); return this; }
   f4(name: string, a: number, b: number, c: number, d: number) { this.gl.uniform4f(this.loc(name), a, b, c, d); return this; }
   i2(name: string, a: number, b: number) { this.gl.uniform2i(this.loc(name), a, b); return this; }
   m4(name: string, m: ArrayLike<number>) { this.gl.uniformMatrix4fv(this.loc(name), false, Float32Array.from(m)); return this; }

@@ -23,6 +23,12 @@ const float G = 9.81;
 bool inside(ivec2 c) { return c.x >= 0 && c.y >= 0 && c.x < u_size.x && c.y < u_size.y; }
 vec4 S(ivec2 c) { return texelFetch(u_state, c, 0); }
 vec4 B(ivec2 c) { return texelFetch(u_bed, c, 0); }
+// cell-centred velocity: average of the fluxes on both faces of each axis, over depth s.r
+vec2 cellVel(ivec2 c, vec4 s) {
+  float qW = inside(c - ivec2(1, 0)) ? S(c - ivec2(1, 0)).g : s.g;
+  float qN = inside(c - ivec2(0, 1)) ? S(c - ivec2(0, 1)).b : s.b;
+  return 0.5 * vec2(qW + s.g, qN + s.b) / s.r;
+}
 `;
 
 /** Draws one Terrarium tile (possibly an overzoomed parent) into the R32F elevation target. */
@@ -275,8 +281,9 @@ void main() {
   v_alpha = p.w > 0.0 ? clamp(0.25 + p.w / 1.5, 0.0, 1.0) * smoothstep(0.0, 0.1, age) * (1.0 - smoothstep(0.8, 1.0, age)) : 0.0;
   v_alpha *= u_density;
   if (v_alpha <= 0.0) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); return; }
-  vec4 s = S(clamp(ivec2(floor(p.xy)), ivec2(0), u_size - 1));
-  vec2 v = s.r > 1e-3 ? s.gb / s.r : vec2(0.0);
+  ivec2 pc = clamp(ivec2(floor(p.xy)), ivec2(0), u_size - 1);
+  vec4 s = S(pc);
+  vec2 v = s.r > 1e-3 ? cellVel(pc, s) : vec2(0.0);
   vec2 dir = length(v) > 1e-6 ? normalize(v) : vec2(1.0, 0.0);
   vec4 head = u_matrix * vec4(p.xy / u_gridSize, 0.0, 1.0);
   vec4 back = u_matrix * vec4((p.xy - dir) / u_gridSize, 0.0, 1.0);
@@ -319,7 +326,7 @@ out vec4 o;
 vec2 vel(ivec2 c) {
   if (!inside(c)) return vec2(0.0);
   vec4 s = S(c);
-  return s.r < u_minDepth ? vec2(0.0) : s.gb / s.r;
+  return s.r < u_minDepth ? vec2(0.0) : cellVel(c, s);
 }
 void main() {
   ivec2 c = ivec2(gl_FragCoord.xy);
@@ -398,7 +405,7 @@ void main() {
     float dNorth = -(eta(c + ivec2(0, 1), e0) - eta(c - ivec2(0, 1), e0)) / (2.0 * u_dx);
     // flow map: two copies of the ripple pattern dragged along the flow, each restarting while the other is at full weight
     vec4 sc = S(c);
-    vec2 vel = sc.r > 1e-3 ? sc.gb / sc.r : vec2(0.0);
+    vec2 vel = sc.r > 1e-3 ? cellVel(c, sc) : vec2(0.0);
     float spd = length(vel);
     if (spd > 4.0) { vel *= 4.0 / spd; spd = 4.0; }
     vec2 wp = (v_cell + u_cellOrigin) / u_rippleCells, flow = vel / (u_rippleCells * u_dx) * 2.5;

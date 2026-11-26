@@ -347,7 +347,7 @@ void main() {
     if (b.g > 0.5) obs = vec4(0.85, 0.2, 0.2, 1.0) * 0.55;
     else if (dz > 0.05) obs = vec4(1.0, 0.6, 0.1, 1.0) * 0.45 * clamp(dz / 1.0, 0.4, 1.0);
     else if (dz < -0.05) obs = vec4(0.1, 0.9, 0.8, 1.0) * 0.45;
-    obs *= 1.0 - cover;
+    obs *= mix(1.0, 0.5, cover);  // still visible under water, dimmer, as in Simple
   }
   if (max(max(add.r, add.g), add.b) <= 0.0 && obs.a <= 0.0) discard;
   o = vec4(add + obs.rgb, obs.a);

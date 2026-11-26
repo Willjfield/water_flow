@@ -10,25 +10,25 @@ import { MAPTERHORN_TILESIZE, MAPTERHORN_URL } from './elevation';
 
 setWorkerUrl(workerUrl);
 
-const BASEMAP = 'https://tiles.openfreemap.org/styles/positron';
+const BASEMAP = 'style_aerial.json'//'https://tiles.openfreemap.org/styles/positron';
 
 const params: SimParams = {
   mode: 'rain',
   rainMmPerHr: 100,
   pourMmPerS: 50,
   brushRadiusM: 25,
-  simSpeed: 50,
+  simSpeed: 25,
   infilMmPerHr: 8,
   manningN: 0.035,
   minDepthM: 0.01,
   opacity: 0.85,
   particles: true,
-  showObstacles: true,
+  showObstacles: false,
   seaSink: true,
   keepWater: true,
   openBridges: true,
   paused: false,
-  cellPx: 2,
+  cellPx: 1,
 };
 
 type ObstacleMode = 'auto' | 'local' | 'openfreemap' | 'off';

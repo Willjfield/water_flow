@@ -338,7 +338,9 @@ void main() {
   float fr = speed / sqrt(G * s.r);
   float shear = length(vel(c + ivec2(1, 0)) - vel(c - ivec2(1, 0))) + length(vel(c + ivec2(0, 1)) - vel(c - ivec2(0, 1)));
   float src = (0.6 * smoothstep(1.5, 3.0, fr) + smoothstep(1.0, 3.0, shear)) * smoothstep(0.3, 1.0, speed) * smoothstep(0.03, 0.1, s.r);
-  o = vec4(min(f * exp(-u_dt / 8.0) + src * min(u_dt, 2.0) * 0.5, 1.0), 0.0, 0.0, 0.0);
+  // relax toward 2 * src with an 8 s time constant, so the steady amount doesn't depend on the frame's dt
+  float k = exp(-u_dt / 8.0);
+  o = vec4(min(f * k + 2.0 * src * (1.0 - k), 1.0), 0.0, 0.0, 0.0);
 }
 `;
 

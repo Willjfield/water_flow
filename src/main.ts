@@ -23,6 +23,7 @@ const params: SimParams = {
   manningN: 0.035,
   minDepthM: 0.01,
   opacity: 0.85,
+  look: 'clear',
   particles: true,
   showObstacles: false,
   seaSink: true,
@@ -80,13 +81,16 @@ map.on('load', () => {
     maxzoom: 15,
     attribution: '<a href="https://mapterhorn.com/attribution">© Mapterhorn</a>',
   });
-  const firstSymbol = map.getStyle().layers.find((l) => l.type === 'symbol')?.id;
+  // Insert before the first layer that is not draped onto 3D terrain (symbols, extrusions, ...), so that with terrain
+  // on the water shares the basemap's terrain-tile texture and the realistic look can tint the ground beneath it.
+  const DRAPED = ['background', 'fill', 'line', 'raster', 'hillshade', 'color-relief'];
+  const beforeId = map.getStyle().layers.find((l) => !DRAPED.includes(l.type))?.id;
   const hasHillshade = map.getStyle().layers.some((l) => l.type === 'hillshade');
   if (!hasHillshade) map.addLayer(
     { id: 'hillshade', type: 'hillshade', source: 'mapterhorn', paint: { 'hillshade-exaggeration': 0.35, 'hillshade-shadow-color': '#5a5a6a' } },
-    firstSymbol,
+    beforeId,
   );
-  map.addLayer(layer, firstSymbol);
+  map.addLayer(layer, beforeId);
   init3dBuildings();
   map.addSource('pour-brush', { type: 'geojson', data: EMPTY });
   map.addLayer({ id: 'pour-brush-fill', type: 'fill', source: 'pour-brush', paint: { 'fill-color': '#1b6fd1', 'fill-opacity': 0.08 } });
@@ -234,6 +238,11 @@ document.querySelectorAll<HTMLInputElement>('input[name=mode]').forEach((r) =>
 $<HTMLSelectElement>('obstacles').addEventListener('change', (e) => {
   obstacleMode = (e.target as HTMLSelectElement).value as ObstacleMode;
   layer.reloadObstacles();
+});
+$<HTMLSelectElement>('look').value = params.look;
+$<HTMLSelectElement>('look').addEventListener('change', (e) => {
+  params.look = (e.target as HTMLSelectElement).value as SimParams['look'];
+  map.triggerRepaint();
 });
 $<HTMLSelectElement>('res').value = String(params.cellPx);
 $<HTMLSelectElement>('res').addEventListener('change', (e) => {

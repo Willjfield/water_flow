@@ -281,6 +281,79 @@ void main() {
 }
 `;
 
+/**
+ * Physically-flavoured water, drawn in two passes over the map.
+ * Pass 0 (blend dst *= src): light from the ground through the water, T = exp(-sigma * h), less what the surface reflects.
+ * Pass 1 (premultiplied over): light scattered back by the water body, sky reflection (Schlick Fresnel) and sun glint.
+ * Surface normals come from the slope of the water surface (bed + depth), exaggerated so flow structure reads.
+ */
+export const WATER_REAL_FS = `${HEAD}
+${CELL_HELPERS}
+in vec2 v_cell;
+uniform float u_pass;
+uniform float u_minDepth;
+uniform float u_showObs;
+uniform float u_dx;
+uniform float u_slopeGain;
+uniform vec3 u_view;     // unit vector from the ground to the camera (east, north, up)
+uniform vec3 u_sun;      // unit vector towards the sun
+uniform vec3 u_sigma;    // extinction per metre of depth
+uniform vec3 u_body;     // colour the water body tends to with depth
+uniform vec3 u_sky;
+out vec4 o;
+float H(ivec2 c) { c = clamp(c, ivec2(0), u_size - 1); return S(c).r; }
+float eta(ivec2 c, float fallback) {
+  c = clamp(c, ivec2(0), u_size - 1);
+  float h = S(c).r;
+  // dry or blocked neighbours would read as cliffs, so treat them as level with this cell
+  return (h < u_minDepth || B(c).g > 0.5) ? fallback : h + B(c).r;
+}
+void main() {
+  vec2 p = v_cell - 0.5;
+  ivec2 i = ivec2(floor(p));
+  vec2 f = p - floor(p);
+  float h = mix(mix(H(i), H(i + ivec2(1, 0)), f.x), mix(H(i + ivec2(0, 1)), H(i + ivec2(1, 1)), f.x), f.y);
+  ivec2 c = clamp(ivec2(floor(v_cell)), ivec2(0), u_size - 1);
+
+  float cover = smoothstep(u_minDepth * 0.5, u_minDepth * 2.0, h);
+  float damp = smoothstep(u_minDepth * 0.1, u_minDepth, h);  // wet ground under a thin film looks darker
+
+  vec3 trans = vec3(1.0), add = vec3(0.0);
+  if (cover > 0.0) {
+    float e0 = S(c).r + B(c).r;
+    float dEast = (eta(c + ivec2(1, 0), e0) - eta(c - ivec2(1, 0), e0)) / (2.0 * u_dx);
+    float dNorth = -(eta(c + ivec2(0, 1), e0) - eta(c - ivec2(0, 1), e0)) / (2.0 * u_dx);
+    vec3 n = normalize(vec3(-dEast * u_slopeGain, -dNorth * u_slopeGain, 1.0));
+    float cosV = max(dot(n, u_view), 0.0);
+    float F = 0.02 + 0.98 * pow(1.0 - cosV, 5.0);
+    vec3 T = exp(-u_sigma * h);
+    vec3 hv = normalize(u_sun + u_view);
+    float glint = pow(max(dot(n, hv), 0.0), 180.0) * 1.2 * max(u_sun.z, 0.0);
+    trans = mix(vec3(1.0), T * (1.0 - F), cover);
+    add = cover * (u_body * (1.0 - T) * (1.0 - F) + u_sky * F + vec3(glint));
+  }
+  // wet ground is darker, both at the soaked fringe and under the water itself
+  trans *= mix(1.0, 0.72, damp);
+
+  if (u_pass < 0.5) {
+    if (all(greaterThan(trans, vec3(0.999)))) discard;
+    o = vec4(trans, 1.0);
+    return;
+  }
+  vec4 obs = vec4(0.0);
+  if (u_showObs > 0.5) {
+    vec4 b = B(c);
+    float dz = b.r - b.a;
+    if (b.g > 0.5) obs = vec4(0.85, 0.2, 0.2, 1.0) * 0.55;
+    else if (dz > 0.05) obs = vec4(1.0, 0.6, 0.1, 1.0) * 0.45 * clamp(dz / 1.0, 0.4, 1.0);
+    else if (dz < -0.05) obs = vec4(0.1, 0.9, 0.8, 1.0) * 0.45;
+    obs *= 1.0 - cover;
+  }
+  if (max(max(add.r, add.g), add.b) <= 0.0 && obs.a <= 0.0) discard;
+  o = vec4(add + obs.rgb, obs.a);
+}
+`;
+
 export const WATER_VS = `${HEAD}
 layout(location = 0) in vec2 a_pos;
 uniform mat4 u_matrix;

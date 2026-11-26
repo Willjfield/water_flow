@@ -7,6 +7,16 @@ import { MAX_CUT_M } from './channels';
 import * as S from './shaders';
 
 export type Mode = 'rain' | 'pour' | 'box';
+export type WaterLook = 'simple' | 'clear' | 'muddy';
+
+/** Extinction per metre and deep-water body colour for the realistic looks (extinction exaggerated so depth reads). */
+const LOOKS: Record<Exclude<WaterLook, 'simple'>, { sigma: [number, number, number]; body: [number, number, number] }> = {
+  clear: { sigma: [6.0, 2.0, 1.2], body: [0.02, 0.1, 0.14] },
+  muddy: { sigma: [6.0, 7.5, 10.0], body: [0.21, 0.17, 0.1] },
+};
+const SKY: [number, number, number] = [0.62, 0.72, 0.85];
+// sun from the north-west at 40 degrees, matching the usual hillshade lighting
+const SUN: [number, number, number] = [-0.5417, 0.5417, 0.6428];
 
 export interface SimParams {
   mode: Mode;
@@ -19,6 +29,7 @@ export interface SimParams {
   manningN: number;
   minDepthM: number;
   opacity: number;
+  look: WaterLook;
   particles: boolean;
   showObstacles: boolean;
   seaSink: boolean;
@@ -67,7 +78,7 @@ export class WaterLayer implements CustomLayerInterface {
 
   private map!: MlMap;
   private gl!: GL;
-  private progs!: Record<'dem' | 'bed' | 'flux' | 'depth' | 'reduce' | 'resample' | 'pupdate' | 'pdraw' | 'water', Program>;
+  private progs!: Record<'dem' | 'bed' | 'flux' | 'depth' | 'reduce' | 'resample' | 'pupdate' | 'pdraw' | 'water' | 'waterReal', Program>;
   private triVao!: WebGLVertexArrayObject;
   private quadVao!: WebGLVertexArrayObject;
   private emptyVao!: WebGLVertexArrayObject;
@@ -133,6 +144,7 @@ export class WaterLayer implements CustomLayerInterface {
       pupdate: P(S.FULLSCREEN_VS, S.PARTICLE_UPDATE_FS),
       pdraw: P(S.PARTICLE_VS, S.PARTICLE_FS),
       water: P(S.WATER_VS, S.WATER_FS),
+      waterReal: P(S.WATER_VS, S.WATER_REAL_FS),
     };
     const vao = (data: number[]) => {
       const v = gl.createVertexArray()!;
@@ -441,7 +453,8 @@ export class WaterLayer implements CustomLayerInterface {
     gl.disable(gl.BLEND); gl.disable(gl.DEPTH_TEST); gl.disable(gl.STENCIL_TEST); gl.disable(gl.SCISSOR_TEST); gl.disable(gl.CULL_FACE);
     gl.colorMask(true, true, true, true);
     const pr = this.params;
-    const drawKey = `${pr.minDepthM}|${pr.opacity}|${pr.showObstacles}|${pr.particles}`;
+    const view = pr.look === 'simple' ? '' : `${this.map.getPitch().toFixed(1)}|${this.map.getBearing().toFixed(1)}`;
+    const drawKey = `${pr.minDepthM}|${pr.opacity}|${pr.showObstacles}|${pr.particles}|${pr.look}|${view}`;
     const changed = !pr.paused || !!this.pending || !!this.pendingObs || this.clearRequested || this.bedDirty || drawKey !== this.drawKey;
     this.drawKey = drawKey;
     try {
@@ -498,11 +511,28 @@ export class WaterLayer implements CustomLayerInterface {
     gl.disable(gl.DEPTH_TEST); gl.disable(gl.STENCIL_TEST); gl.disable(gl.CULL_FACE);
     gl.enable(gl.BLEND);
     gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
-
-    this.bindCell(this.progs.water, this.state.read.tex).m4('u_matrix', m).f2('u_gridSize', g.nx, g.ny)
-      .f('u_minDepth', this.params.minDepthM).f('u_opacity', this.params.opacity).f('u_showObs', this.params.showObstacles ? 1 : 0);
     gl.bindVertexArray(this.quadVao);
-    gl.drawArrays(gl.TRIANGLES, 0, 6);
+
+    const pr = this.params;
+    if (pr.look === 'simple') {
+      this.bindCell(this.progs.water, this.state.read.tex).m4('u_matrix', m).f2('u_gridSize', g.nx, g.ny)
+        .f('u_minDepth', pr.minDepthM).f('u_opacity', pr.opacity).f('u_showObs', pr.showObstacles ? 1 : 0);
+      gl.drawArrays(gl.TRIANGLES, 0, 6);
+    } else {
+      const { sigma, body } = LOOKS[pr.look];
+      const b = (this.map.getBearing() * Math.PI) / 180, t = (this.map.getPitch() * Math.PI) / 180;
+      const prog = this.bindCell(this.progs.waterReal, this.state.read.tex).m4('u_matrix', m).f2('u_gridSize', g.nx, g.ny)
+        .f('u_minDepth', pr.minDepthM).f('u_showObs', pr.showObstacles ? 1 : 0).f('u_dx', g.dx).f('u_slopeGain', 6)
+        .f3('u_view', -Math.sin(b) * Math.sin(t), -Math.cos(b) * Math.sin(t), Math.cos(t))
+        .f3('u_sun', ...SUN).f3('u_sigma', ...sigma).f3('u_body', ...body).f3('u_sky', ...SKY);
+      // pass 0 multiplies the map by the water's transmittance; pass 1 adds scattered and reflected light
+      gl.blendFuncSeparate(gl.ZERO, gl.SRC_COLOR, gl.ZERO, gl.ONE);
+      prog.f('u_pass', 0);
+      gl.drawArrays(gl.TRIANGLES, 0, 6);
+      gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+      prog.f('u_pass', 1);
+      gl.drawArrays(gl.TRIANGLES, 0, 6);
+    }
 
     if (this.params.particles && this.particles) {
       this.progs.pdraw.use().tex('u_particles', 0, this.particles.read.tex).f2('u_gridSize', g.nx, g.ny).m4('u_matrix', m)

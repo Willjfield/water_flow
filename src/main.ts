@@ -10,7 +10,8 @@ import { MAPTERHORN_TILESIZE, MAPTERHORN_URL } from './elevation';
 
 setWorkerUrl(workerUrl);
 
-const BASEMAP = 'style_aerial.json'//'https://tiles.openfreemap.org/styles/positron';
+const BASEMAP = 'style_aerial.json'
+//const BASEMAP = 'https://tiles.openfreemap.org/styles/positron';
 
 const params: SimParams = {
   mode: 'rain',

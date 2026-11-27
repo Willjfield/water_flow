@@ -557,7 +557,7 @@ export class WaterLayer implements CustomLayerInterface {
       const vp = gl.getParameter(gl.VIEWPORT) as Int32Array;
       this.bindCell(this.progs.pdraw, this.state.read.tex).tex('u_particles', 2, this.particles.read.tex).f2('u_gridSize', g.nx, g.ny).m4('u_matrix', m)
         .f2('u_viewport', vp[2], vp[3]).f('u_dpr', devicePixelRatio).f('u_maxAge', PARTICLE_MAX_AGE)
-        .f('u_density', Math.min(1, Math.max(0.12, (this.stats.wetCells ?? 0) / (4 * PARTICLE_TEX * PARTICLE_TEX))));
+        .f('u_minDepth', this.params.minDepthM).f('u_density', Math.min(1, Math.max(0.12, (this.stats.wetCells ?? 0) / (4 * PARTICLE_TEX * PARTICLE_TEX))));
       gl.bindVertexArray(this.emptyVao);
       gl.drawArrays(gl.TRIANGLES, 0, PARTICLE_TEX * PARTICLE_TEX * 6);
     }

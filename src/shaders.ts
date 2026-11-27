@@ -272,6 +272,7 @@ uniform float u_maxAge;
 uniform float u_density;  // dims the streaks when all particles crowd into a small wet area
 out float v_alpha;
 out vec2 v_uv;
+out vec2 v_cell;
 const vec2 Q[6] = vec2[6](vec2(0, -1), vec2(1, -1), vec2(0, 1), vec2(0, 1), vec2(1, -1), vec2(1, 1));
 void main() {
   ivec2 n = textureSize(u_particles, 0);
@@ -294,7 +295,9 @@ void main() {
   float wid = mix(1.0, 2.4, smoothstep(0.1, 2.0, p.w)) * u_dpr;
   vec2 q = Q[gl_VertexID % 6];
   v_uv = q;
-  vec2 px = hs + ax * (mix(-len, 0.0, q.x) + (2.0 * q.x - 1.0) * wid) + vec2(-ax.y, ax.x) * q.y * wid;
+  float along = mix(-len, 0.0, q.x) + (2.0 * q.x - 1.0) * wid;
+  v_cell = p.xy + dir * along / max(length(d), 1e-4);
+  vec2 px = hs + ax * along + vec2(-ax.y, ax.x) * q.y * wid;
   gl_Position = vec4(px / (0.5 * u_viewport) * head.w, head.z, head.w);
 }
 `;
@@ -302,11 +305,16 @@ void main() {
 export const PARTICLE_FS = `${HEAD}
 in float v_alpha;
 in vec2 v_uv;
+in vec2 v_cell;
+uniform sampler2D u_state;
+uniform ivec2 u_size;
+uniform float u_minDepth;
 out vec4 o;
 void main() {
   // bright soft head, fading tail, soft sides
   float a = v_alpha * 0.45 * (1.0 - smoothstep(0.2, 1.0, abs(v_uv.y))) * smoothstep(0.0, 0.85, v_uv.x) * (1.0 - smoothstep(0.85, 1.0, v_uv.x));
-  if (a <= 0.003) discard;
+  ivec2 c = ivec2(floor(v_cell));
+  if (a <= 0.003 || any(lessThan(c, ivec2(0))) || any(greaterThanEqual(c, u_size)) || texelFetch(u_state, c, 0).r < u_minDepth) discard;
   o = vec4(vec3(a), a);
 }
 `;
@@ -340,7 +348,10 @@ void main() {
   float src = (0.6 * smoothstep(1.5, 3.0, fr) + smoothstep(1.0, 3.0, shear)) * smoothstep(0.3, 1.0, speed) * smoothstep(0.03, 0.1, s.r);
   // relax toward 2 * src with an 8 s time constant, so the steady amount doesn't depend on the frame's dt
   float k = exp(-u_dt / 8.0);
-  o = vec4(min(f * k + 2.0 * src * (1.0 - k), 1.0), 0.0, 0.0, 0.0);
+  float target = 2.0 * src, nf = min(f * k + target * (1.0 - k), 1.0);
+  // R16F can't store decay steps smaller than half an ulp (~2.4e-4 near 1), so take at least 5e-4 per update
+  if (nf < f) nf = max(target, min(nf, f - 5e-4));
+  o = vec4(nf, 0.0, 0.0, 0.0);
 }
 `;
 
